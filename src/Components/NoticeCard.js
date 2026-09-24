@@ -1,6 +1,6 @@
 import React from 'react';
 import {StyleSheet, Text, TouchableOpacity, View} from 'react-native';
-import {colors, noticeEmoji, shadow} from '../Constants/theme';
+import {colors, shadow} from '../Constants/theme';
 
 export default function NoticeCard({item, unread, onPress}) {
   return (
@@ -9,7 +9,7 @@ export default function NoticeCard({item, unread, onPress}) {
       onPress={onPress}
       style={[styles.card, {borderLeftColor: item.pinned ? colors.accent : colors.primary2}]}>
       <View style={styles.icon}>
-        <Text style={{fontSize: 22}}>{noticeEmoji[item.tag]}</Text>
+        <Text style={{fontSize: 22}}>{item.icon}</Text>
       </View>
       <View style={{flex: 1}}>
         <Text style={styles.title}>{item.title}{item.pinned ? '  📌' : ''}</Text>

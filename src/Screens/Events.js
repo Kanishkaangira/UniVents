@@ -2,13 +2,12 @@ import React, {useState} from 'react';
 import FeedScreen from '../Components/FeedScreen';
 import EventCard from '../Components/EventCard';
 import EventDetailSheet from '../Components/EventDetailSheet';
-import {EVENTS} from '../Data/data';
 import {useApp} from '../Context/AppContext';
 
-const SEARCH_KEYS = ['title', 'org', 'venue', 'date'];
+const SEARCH_KEYS = ['title', 'org', 'venue', 'date', 'category'];
 
 export default function Events() {
-  const {saved, toggleSave} = useApp();
+  const {eventTree, saved, toggleSave} = useApp();
   const [selected, setSelected] = useState(null);
 
   return (
@@ -17,9 +16,9 @@ export default function Events() {
         title="Events"
         subtitle="Discover what is on"
         noun="event"
-        data={EVENTS}
+        data={eventTree}
         searchKeys={SEARCH_KEYS}
-        searchPlaceholder="Search events, venues, faculties…"
+        searchPlaceholder="Search events, venues, departments…"
         renderItem={item => (
           <EventCard
             key={item.id}

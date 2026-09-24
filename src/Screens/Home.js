@@ -1,5 +1,5 @@
 import React, {useMemo, useState} from 'react';
-import {FlatList, StyleSheet, Text, TouchableOpacity, View} from 'react-native';
+import {ActivityIndicator, FlatList, StyleSheet, Text, TouchableOpacity, View} from 'react-native';
 import LinearGradient from 'react-native-linear-gradient';
 import Screen from '../Components/Screen';
 import ScreenHeader from '../Components/ScreenHeader';
@@ -9,41 +9,53 @@ import FeaturedCard from '../Components/FeaturedCard';
 import MiniCalendar from '../Components/MiniCalendar';
 import EventCard from '../Components/EventCard';
 import EventDetailSheet from '../Components/EventDetailSheet';
-import {DEMO_MONTH, EVENTS, flatten} from '../Data/data';
 import {colors, gradients, shadow} from '../Constants/theme';
 import {useApp} from '../Context/AppContext';
 
+const pad = n => String(n).padStart(2, '0');
+
 export default function Home({navigation}) {
-  const {profile, registered, saved, toggleSave, unreadCount, count} = useApp();
-  const [day, setDay] = useState(DEMO_MONTH.today);
+  const {profile, events, registered, saved, toggleSave, unreadCount, count, loading, refresh} = useApp();
+  const now = new Date();
+  const [cursor, setCursor] = useState({year: now.getFullYear(), month: now.getMonth()});
+  const [day, setDay] = useState(now.getDate());
   const [selected, setSelected] = useState(null);
 
-  const events = useMemo(() => flatten(EVENTS), []);
-  const live = events.find(e => e.live);
-  const featured = useMemo(() => ['u1', 'f2', 'u2', 'f8', 'c2'].map(id => events.find(e => e.id === id)), [events]);
+  const active = useMemo(() => events.filter(e => e.status === 'upcoming' || e.status === 'live'), [events]);
+  const live = active.find(e => e.status === 'live');            // status = 'live'
+  const featured = useMemo(() => active.slice(0, 5), [active]);   // events are already sorted by event_date
 
-  // { 24: [events], 28: [events] ... } for the demo month
+  // { 24: [events], 28: [events] ... } for the month shown in the calendar
   const byDay = useMemo(() => {
+    const prefix = `${cursor.year}-${pad(cursor.month + 1)}-`;
     const map = {};
     events.forEach(e => {
-      const [d, mon] = e.date.split(' ');
-      if (mon === 'Sep') (map[+d] = map[+d] || []).push(e);
+      if (e.dateISO && e.dateISO.startsWith(prefix)) (map[+e.dateISO.slice(8, 10)] = map[+e.dateISO.slice(8, 10)] || []).push(e);
     });
     return map;
-  }, [events]);
+  }, [events, cursor]);
   const marked = useMemo(() => Object.fromEntries(Object.keys(byDay).map(d => [d, true])), [byDay]);
   const dayEvents = byDay[day] || [];
+  const isThisMonth = cursor.year === now.getFullYear() && cursor.month === now.getMonth();
 
-  const hour = new Date().getHours();
+  const move = delta => {
+    const d = new Date(cursor.year, cursor.month + delta, 1);
+    setCursor({year: d.getFullYear(), month: d.getMonth()});
+    setDay(1);
+  };
+
+  const hour = now.getHours();
   const greeting = hour < 12 ? 'Good morning' : hour < 17 ? 'Good afternoon' : 'Good evening';
 
   return (
     <>
-      <Screen>
+      <Screen refreshing={loading} onRefresh={refresh}>
         <ScreenHeader brand />
 
         <Text style={styles.hi}>{greeting},</Text>
-        <Text style={styles.name}>{profile.name} 👋</Text>
+        <Text style={styles.name}>{profile?.user_name || 'there'} 👋</Text>
+
+        {loading && !events.length && <ActivityIndicator color={colors.primary} style={{marginVertical: 20}} />}
 
         {live && (
           <LinearGradient colors={gradients.brand} start={{x: 0, y: 0}} end={{x: 1, y: 1}} style={styles.hero}>
@@ -61,33 +73,39 @@ export default function Home({navigation}) {
         )}
 
         <View style={styles.tiles}>
-          <StatTile value={events.length} label="📅 Upcoming" onPress={() => navigation.navigate('Events')} />
+          <StatTile value={active.length} label="📅 Upcoming" onPress={() => navigation.navigate('Events')} />
           <StatTile value={unreadCount} label="📢 Unread" onPress={() => navigation.navigate('Notice')} />
           <StatTile value={count(registered)} label="🎟️ Registered" onPress={() => navigation.navigate('Profile')} />
         </View>
 
-        <SectionHeader title="Featured events" note="See all" onPress={() => navigation.navigate('Events')} />
-        <FlatList
-          horizontal
-          data={featured}
-          keyExtractor={item => item.id}
-          showsHorizontalScrollIndicator={false}
-          style={{marginHorizontal: -18, marginBottom: 18}}
-          contentContainerStyle={{paddingHorizontal: 18, paddingVertical: 6, gap: 12}}
-          renderItem={({item}) => <FeaturedCard item={item} onPress={() => setSelected(item)} />}
-        />
+        {!!featured.length && (
+          <>
+            <SectionHeader title="Featured events" note="See all" onPress={() => navigation.navigate('Events')} />
+            <FlatList
+              horizontal
+              data={featured}
+              keyExtractor={item => item.id}
+              showsHorizontalScrollIndicator={false}
+              style={{marginHorizontal: -18, marginBottom: 18}}
+              contentContainerStyle={{paddingHorizontal: 18, paddingVertical: 6, gap: 12}}
+              renderItem={({item}) => <FeaturedCard item={item} onPress={() => setSelected(item)} />}
+            />
+          </>
+        )}
 
-        <SectionHeader title="Calendar" note={DEMO_MONTH.label} />
+        <SectionHeader title="Calendar" />
         <MiniCalendar
-          year={DEMO_MONTH.year}
-          month={DEMO_MONTH.month}
-          today={DEMO_MONTH.today}
+          year={cursor.year}
+          month={cursor.month}
+          today={isThisMonth ? now.getDate() : null}
           selected={day}
           marked={marked}
           onSelect={setDay}
+          onPrev={() => move(-1)}
+          onNext={() => move(1)}
         />
 
-        <SectionHeader title={day === DEMO_MONTH.today ? 'Today' : `${day} Sep`} note={`${dayEvents.length} event${dayEvents.length === 1 ? '' : 's'}`} />
+        <SectionHeader title={isThisMonth && day === now.getDate() ? 'Today' : `${day} ${['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'][cursor.month]}`} note={`${dayEvents.length} event${dayEvents.length === 1 ? '' : 's'}`} />
         {dayEvents.length ? (
           dayEvents.map(item => (
             <EventCard key={item.id} item={item} saved={!!saved[item.id]} onToggleSave={() => toggleSave(item.id)} onPress={() => setSelected(item)} />

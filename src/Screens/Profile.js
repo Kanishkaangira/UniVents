@@ -10,31 +10,69 @@ import BottomSheet from '../Components/BottomSheet';
 import ChipRow from '../Components/ChipRow';
 import PrimaryButton from '../Components/PrimaryButton';
 import AppLogo from '../Components/AppLogo';
-import {FACULTIES} from '../Data/data';
 import {colors, gradients, shadow} from '../Constants/theme';
 import {useApp} from '../Context/AppContext';
 
-const FACULTY_CHIPS = Object.keys(FACULTIES).map(k => ({key: k, label: k}));
-
 export default function Profile() {
-  const {profile, setProfile, registered, saved, unreadCount, count} = useApp();
+  const {session, profile, myDepartment, departments, saveProfile, signOut, registered, saved, unreadCount, count, loading, refresh} = useApp();
   const [sheet, setSheet] = useState(null); // 'edit' | 'about' | 'logout' | null
-  const [draft, setDraft] = useState(profile);
+  const [draft, setDraft] = useState({});
+  const [saving, setSaving] = useState(false);
 
-  const openEdit = () => { setDraft(profile); setSheet('edit'); };
-  const save = () => {
-    setProfile({...draft, name: draft.name.trim() || profile.name});
-    setSheet(null);
+  const logOut = async () => {
+    const {error} = await signOut();
+    if (error) Alert.alert('Could not sign out', error.message);
+    else setSheet(null);
   };
-  const logout = () => {
-    setSheet(null);
-    // TODO: clear your auth token here, then navigation.replace('Login')
-    Alert.alert('Logged out', 'Connect this to your login flow.');
+
+  if (!profile) {
+    return (
+      <Screen refreshing={loading} onRefresh={refresh}>
+        <ScreenHeader title="Profile" subtitle={session ? 'Your account' : 'Signed out'} />
+        <Text style={styles.about}>
+          {session
+            ? `No profile found for ${session.user.email || 'this account'}. Ask the university admin to create one.`
+            : 'You are signed out. You can keep browsing the app.'}
+        </Text>
+        {session && <PrimaryButton label="Log out" variant="danger" onPress={logOut} />}
+      </Screen>
+    );
+  }
+
+  const isStudent = profile.user_type === 'student';
+  const chips = departments.map(d => ({key: d.id, label: d.code}));
+
+  const openEdit = () => {
+    setDraft({
+      user_name: profile.user_name, department_id: profile.department_id,
+      enroll_no: profile.enroll_no || '',
+      course: profile.course || '', batch: profile.batch || '', semester: profile.semester ? String(profile.semester) : '',
+    });
+    setSheet('edit');
+  };
+
+  const save = async () => {
+    const semester = draft.semester ? parseInt(draft.semester, 10) : null;
+    if (isStudent && draft.semester && Number.isNaN(semester)) return Alert.alert('Semester must be a number');
+    setSaving(true);
+    try {
+      // only columns the database allows users to change
+      await saveProfile({
+        user_name: draft.user_name.trim() || profile.user_name,
+        department_id: draft.department_id,
+        ...(isStudent && {enroll_no: draft.enroll_no.trim(), course: draft.course, batch: draft.batch, semester}),
+      });
+      setSheet(null);
+    } catch (e) {
+      Alert.alert('Could not save', e.message);
+    } finally {
+      setSaving(false);
+    }
   };
 
   return (
     <>
-      <Screen>
+      <Screen refreshing={loading} onRefresh={refresh}>
         <ScreenHeader title="Profile" subtitle="Your account" />
 
         <LinearGradient colors={gradients.brand} start={{x: 0, y: 0}} end={{x: 1, y: 1}} style={styles.card}>
@@ -42,12 +80,29 @@ export default function Profile() {
             <Icon name="create-outline" size={18} color="#fff" />
           </TouchableOpacity>
           <LinearGradient colors={['#fff', '#FFB36B']} style={styles.ring}>
-            <View style={styles.avatar}><Text style={styles.initial}>{profile.name[0].toUpperCase()}</Text></View>
+            <View style={styles.avatar}><Text style={styles.initial}>{profile.user_name[0].toUpperCase()}</Text></View>
           </LinearGradient>
-          <Text style={styles.name}>{profile.name}</Text>
+          <Text style={styles.name}>{profile.user_name}</Text>
           <Text style={styles.email}>{profile.email}</Text>
-          <Text style={styles.pill}>{profile.faculty} · {profile.course}</Text>
+          <Text style={styles.pill}>{isStudent ? 'Student' : 'Faculty'} · {myDepartment?.code || 'Department pending'}</Text>
         </LinearGradient>
+
+        <View style={styles.detailCard}>
+          <Text style={styles.detailHeading}>Profile details</Text>
+          <ProfileDetail label="Account ID" value={profile.id} selectable />
+          <ProfileDetail label="User type" value={isStudent ? 'Student' : 'Faculty'} />
+          <ProfileDetail label="Full name" value={profile.user_name} />
+          <ProfileDetail label="University email" value={profile.email} />
+          <ProfileDetail label="Department" value={myDepartment ? `${myDepartment.name} (${myDepartment.code})` : 'Not set'} />
+          {isStudent && <>
+            <ProfileDetail label="Enrollment number" value={profile.enroll_no} />
+            <ProfileDetail label="Course" value={profile.course} />
+            <ProfileDetail label="Batch" value={profile.batch} />
+            <ProfileDetail label="Semester" value={profile.semester ? String(profile.semester) : ''} />
+          </>}
+          <ProfileDetail label="Created" value={formatDate(profile.created_at)} />
+          <ProfileDetail label="Last updated" value={formatDate(profile.updated_at)} last />
+        </View>
 
         <View style={styles.stats}>
           <StatTile value={count(registered)} label="Registered" />
@@ -62,18 +117,26 @@ export default function Profile() {
         </View>
       </Screen>
 
-      {/* Edit profile */}
+      {/* Edit profile – only the editable columns */}
       <BottomSheet visible={sheet === 'edit'} onClose={() => setSheet(null)}>
         <Text style={styles.sheetTitle}>Edit profile</Text>
         <Text style={styles.label}>Full name</Text>
-        <TextInput style={styles.input} value={draft.name} onChangeText={name => setDraft({...draft, name})} />
-        <Text style={styles.label}>Faculty</Text>
-        <ChipRow items={FACULTY_CHIPS} value={draft.faculty} onChange={faculty => setDraft({...draft, faculty})} />
-        <Text style={styles.label}>Course</Text>
-        <TextInput style={styles.input} value={draft.course} onChangeText={course => setDraft({...draft, course})} />
-        <Text style={styles.label}>Batch</Text>
-        <TextInput style={styles.input} value={draft.batch} onChangeText={batch => setDraft({...draft, batch})} />
-        <PrimaryButton label="Save changes" onPress={save} style={{marginTop: 18}} />
+        <TextInput style={styles.input} value={draft.user_name} onChangeText={user_name => setDraft({...draft, user_name})} />
+        <Text style={styles.label}>Department</Text>
+        <ChipRow items={chips} value={draft.department_id} onChange={department_id => setDraft({...draft, department_id})} />
+        {isStudent && (
+          <>
+            <Text style={styles.label}>Enrollment number</Text>
+            <TextInput style={styles.input} value={draft.enroll_no} onChangeText={enroll_no => setDraft({...draft, enroll_no})} />
+            <Text style={styles.label}>Course</Text>
+            <TextInput style={styles.input} value={draft.course} onChangeText={course => setDraft({...draft, course})} />
+            <Text style={styles.label}>Batch</Text>
+            <TextInput style={styles.input} value={draft.batch} onChangeText={batch => setDraft({...draft, batch})} />
+            <Text style={styles.label}>Semester</Text>
+            <TextInput style={styles.input} value={draft.semester} keyboardType="number-pad" onChangeText={semester => setDraft({...draft, semester})} />
+          </>
+        )}
+        <PrimaryButton label={saving ? 'Saving…' : 'Save changes'} onPress={saving ? () => {} : save} style={{marginTop: 18}} />
       </BottomSheet>
 
       {/* About */}
@@ -83,7 +146,7 @@ export default function Profile() {
           <Text style={[styles.sheetTitle, {marginTop: 12}]}>UniVents</Text>
           <Text style={styles.pillSoft}>Version 1.0</Text>
           <Text style={styles.about}>
-            One place for every event and notice across your university – by faculty, club or campus-wide.
+            One place for every event and notice across your university – by department, club or campus-wide.
             Register, get reminders and never miss what matters.
           </Text>
         </View>
@@ -94,11 +157,26 @@ export default function Profile() {
       <BottomSheet visible={sheet === 'logout'} onClose={() => setSheet(null)}>
         <Text style={styles.sheetTitle}>Log out?</Text>
         <Text style={styles.about}>You will need your university email to sign in again.</Text>
-        <PrimaryButton label="Yes, log out" variant="danger" onPress={logout} />
+        <PrimaryButton label="Yes, log out" variant="danger" onPress={logOut} />
         <PrimaryButton label="Cancel" variant="soft" onPress={() => setSheet(null)} style={{marginTop: 8}} />
       </BottomSheet>
     </>
   );
+}
+
+function ProfileDetail({label, value, last, selectable}) {
+  return (
+    <View style={[styles.detailRow, last && {borderBottomWidth: 0}]}>
+      <Text style={styles.detailLabel}>{label}</Text>
+      <Text selectable={selectable} style={[styles.detailValue, selectable && {fontSize: 10}]}>{value || '—'}</Text>
+    </View>
+  );
+}
+
+function formatDate(value) {
+  if (!value) return '';
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? '' : date.toLocaleDateString();
 }
 
 const styles = StyleSheet.create({
@@ -110,6 +188,11 @@ const styles = StyleSheet.create({
   name: {color: '#fff', fontSize: 20, fontWeight: '800'},
   email: {color: 'rgba(255,255,255,0.92)', fontSize: 12.5, marginTop: 3, marginBottom: 10},
   pill: {color: '#fff', fontSize: 10.5, fontWeight: '700', backgroundColor: 'rgba(255,255,255,0.22)', paddingHorizontal: 10, paddingVertical: 4, borderRadius: 99, overflow: 'hidden'},
+  detailCard: {backgroundColor: '#fff', borderRadius: 22, paddingHorizontal: 16, paddingVertical: 14, marginBottom: 14, ...shadow, shadowOpacity: 0.07},
+  detailHeading: {fontSize: 15, fontWeight: '800', color: colors.ink, marginBottom: 4},
+  detailRow: {paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: colors.line, gap: 3},
+  detailLabel: {fontSize: 11, fontWeight: '700', color: colors.mute},
+  detailValue: {fontSize: 13, fontWeight: '600', color: colors.ink},
   stats: {flexDirection: 'row', gap: 10, marginBottom: 14},
   menu: {backgroundColor: '#fff', borderRadius: 22, overflow: 'hidden', ...shadow, shadowOpacity: 0.08},
   sheetTitle: {fontSize: 20, fontWeight: '800', color: colors.ink, marginBottom: 6},

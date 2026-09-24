@@ -19,7 +19,7 @@ export default function EventCard({item, saved, onPress, onToggleSave, compact})
       <View style={{flex: 1}}>
         <Text style={styles.title}>{item.title}</Text>
         <Text style={styles.meta}>🕒 {item.time.split(' –')[0]}  ·  📍 {item.venue}</Text>
-        <Text style={styles.tag}>{item.org}</Text>
+        <Text style={[styles.tag, item.status === 'cancelled' && styles.cancelled]}>{item.status === 'cancelled' ? 'Cancelled' : item.org}</Text>
       </View>
       {onToggleSave && (
         <TouchableOpacity onPress={onToggleSave} style={[styles.heart, saved && styles.heartOn]}>
@@ -39,6 +39,7 @@ const styles = StyleSheet.create({
   title: {fontSize: 14, fontWeight: '700', color: colors.ink, marginBottom: 3},
   meta: {fontSize: 12, color: colors.mute},
   tag: {alignSelf: 'flex-start', marginTop: 5, fontSize: 10.5, fontWeight: '700', color: colors.primary, backgroundColor: colors.soft, paddingHorizontal: 9, paddingVertical: 3, borderRadius: 99, overflow: 'hidden'},
+  cancelled: {color: colors.danger, backgroundColor: '#FFF0EC'},
   heart: {width: 34, height: 34, borderRadius: 12, backgroundColor: '#F1F2FA', alignItems: 'center', justifyContent: 'center'},
   heartOn: {backgroundColor: '#FFE9E4'},
 });
