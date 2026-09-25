@@ -9,7 +9,7 @@ import {colors, gradients, shadow} from '../Constants/theme';
 import {useApp} from '../Context/AppContext';
 import {rollNumberFromEmail} from '../Services/emailRules';
 
-const EMPTY_FORM = {user_name: '', user_type: 'student', department_id: '', course: '', batch: '', semester: '', password: '', confirm: ''};
+const EMPTY_FORM = {user_name: '', user_type: '', department_id: '', course: '', batch: '', semester: '', password: '', confirm: ''};
 const SEMESTER_OPTIONS = Array.from({length: 8}, (_, index) => String(index + 1));
 const BATCH_OPTIONS = Array.from({length: 20}, (_, index) => {
   const startYear = 2018 + index;
@@ -19,6 +19,7 @@ const BATCH_OPTIONS = Array.from({length: 20}, (_, index) => {
 export default function ProfileSetup() {
   const {session, profile, departments, profileStatus, error, refresh, completeProfile, setPassword, signOut} = useApp();
   const roll = rollNumberFromEmail(session?.user?.email);
+  const suggestedUserType = roll ? 'student' : 'faculty';
   const needsPassword = !session?.user?.user_metadata?.password_set;
   const [form, setForm] = useState(EMPTY_FORM);
   const isStudent = form.user_type === 'student';
@@ -38,14 +39,15 @@ export default function ProfileSetup() {
     if (profileStatus !== 'missing' || !profile) return;
     setForm({
       ...EMPTY_FORM,
+      user_type: suggestedUserType,
       user_name: profile.user_name || '',
-      user_type: profile.user_type || 'student',
+      user_type: profile.user_type || suggestedUserType,
       department_id: profile.department_id || '',
       course: profile.course || '',
       batch: profile.batch || '',
       semester: profile.semester ? String(profile.semester) : '',
     });
-  }, [profile, profileStatus]);
+  }, [profile, profileStatus, suggestedUserType]);
 
   const submit = async () => {
     const name = form.user_name.trim();

@@ -4,7 +4,7 @@ import Screen from '../Components/Screen';
 import AppLogo from '../Components/AppLogo';
 import PrimaryButton from '../Components/PrimaryButton';
 import {UNIVERSITY_EMAIL_DOMAIN} from '../Constants/env';
-import {ROLL_EMAIL_EXAMPLE, isUniversityEmail, rollNumberFromEmail} from '../Services/emailRules';
+import {isUniversityEmail} from '../Services/emailRules';
 import {colors, shadow} from '../Constants/theme';
 import {useApp} from '../Context/AppContext';
 
@@ -26,16 +26,9 @@ export default function Login() {
     return () => clearTimeout(t);
   }, [cooldown]);
 
-  // Creating an account needs a roll number email; signing in accepts any university email (e.g. faculty)
+  // Students and faculty use their own local part with the shared SVSU domain.
   const validateEmail = () => {
     const mail = email.trim().toLowerCase();
-    if (mode === 'signup') {
-      if (!rollNumberFromEmail(mail)) {
-        Alert.alert('Roll number email required', `Create your account with your roll number email, for example ${ROLL_EMAIL_EXAMPLE}.`);
-        return null;
-      }
-      return mail;
-    }
     if (!isUniversityEmail(mail)) {
       Alert.alert('University email required', `Use an email ending in ${UNIVERSITY_EMAIL_DOMAIN}.`);
       return null;
@@ -58,8 +51,8 @@ export default function Login() {
       return;
     }
 
-    if (/only roll number emails|roll.number email|hook_restrict_signup_to_roll_emails/.test(normalizedDetail)) {
-      Alert.alert('Student email required', 'Use your SVSU roll number email, such as 2301234@svsu.ac.in, to create an account.');
+    if (/svsu email|@svsu\.ac\.in|hook_restrict_signup_to_roll_emails/.test(normalizedDetail)) {
+      Alert.alert('SVSU email required', 'Use your university email ending in @svsu.ac.in. Students should use their roll number; faculty should use their username.');
       return;
     }
 
@@ -133,7 +126,7 @@ export default function Login() {
     setMessage('');
   };
 
-  const placeholder = mode === 'signup' ? `rollno${UNIVERSITY_EMAIL_DOMAIN}` : `email${UNIVERSITY_EMAIL_DOMAIN}`;
+  const placeholder = mode === 'signup' ? `username${UNIVERSITY_EMAIL_DOMAIN}` : `email${UNIVERSITY_EMAIL_DOMAIN}`;
 
   return (
     <Screen>
@@ -211,7 +204,7 @@ export default function Login() {
           {mode === 'signup'
             ? otpSent
               ? 'The code verifies your university email and signs you in. Then complete your profile.'
-              : `Use your roll number email (${ROLL_EMAIL_EXAMPLE}). We will send a 6-digit code to verify it.`
+              : `Use your SVSU email ending in ${UNIVERSITY_EMAIL_DOMAIN}. Students use their roll number; faculty use their username. We will send a 6-digit code to verify it.`
             : 'Sign in with your email and password.'}
         </Text>
         <PrimaryButton

@@ -19,8 +19,9 @@ export default function NoticeDetailSheet({notice, visible, onClose}) {
   const posterUrl = isImageAttachment ? notice.attachmentUrl : notice.imageUrl;
   const department = notice.departmentId ? departments.find(item => item.id === notice.departmentId) : null;
   const club = notice.clubId ? clubs.find(item => item.id === notice.clubId) : null;
-  const scopeValue = department ? `${department.name}${department.code ? ` (${department.code})` : ''}` : club?.name;
-  const audience = notice.visibility === 'student' ? 'Students' : notice.visibility === 'faculty' ? 'Faculty' : 'Everyone';
+  const departmentShort = department?.code || department?.name.split(/\s+/).map(part => part[0]).join('').toUpperCase();
+  const scopeValue = departmentShort || club?.name;
+  const organizerLabel = department ? departmentShort : notice.source;
   const downloadAttachment = async () => {
     try {
       const pathName = notice.attachmentUrl.split(/[?#]/, 1)[0].split('/').pop();
@@ -54,7 +55,7 @@ export default function NoticeDetailSheet({notice, visible, onClose}) {
           <View style={styles.noticeIcon}><Icon name={notice.attachmentType === 'pdf' ? 'document-text-outline' : 'notifications-outline'} size={19} color={notice.attachmentType === 'pdf' ? '#B63847' : colors.primary} /></View>
           <View style={styles.headingCopy}>
             <Text style={styles.title}>{notice.title}</Text>
-            <Text style={styles.meta}>{notice.source}  ·  {notice.date}</Text>
+            <Text style={styles.meta}>{organizerLabel}  ·  {notice.date}</Text>
           </View>
         </View>
 
@@ -62,9 +63,8 @@ export default function NoticeDetailSheet({notice, visible, onClose}) {
         {!!notice.text && <Text style={styles.desc}>{notice.text}</Text>}
 
         <View style={styles.details}>
-          {!!notice.source && <DetailRow icon="person-outline" label="Organizer" value={notice.source} />}
+          {!!organizerLabel && <DetailRow icon="person-outline" label="Organizer" value={organizerLabel} />}
           {!!scopeValue && <DetailRow icon={department ? 'business-outline' : 'people-outline'} label={department ? 'Department' : 'Club'} value={scopeValue} />}
-          <DetailRow icon="eye-outline" label="Visible to" value={audience} />
         </View>
 
         {!!notice.attachmentUrl && (
@@ -158,7 +158,7 @@ const styles = StyleSheet.create({
   title: {fontSize: 20, lineHeight: 26, fontWeight: '900', color: colors.ink},
   meta: {fontSize: 11.5, fontWeight: '600', color: colors.mute, marginTop: 5},
   tag: {alignSelf: 'flex-start', fontSize: 10.5, fontWeight: '800', color: colors.primary, backgroundColor: colors.soft, paddingHorizontal: 10, paddingVertical: 5, borderRadius: 99, overflow: 'hidden'},
-  desc: {fontSize: 14, lineHeight: 22, color: colors.ink, marginTop: 14, marginBottom: 16},
+  desc: {fontSize: 15, lineHeight: 24, color: colors.ink, marginTop: 15, marginBottom: 18},
   details: {backgroundColor: '#F8F9FC', borderWidth: 1, borderColor: colors.line, borderRadius: 16, paddingHorizontal: 12, marginBottom: 14},
   detailRow: {minHeight: 44, flexDirection: 'row', alignItems: 'center', gap: 9, borderBottomWidth: 1, borderBottomColor: '#E9EBF2'},
   detailIcon: {width: 28, height: 28, borderRadius: 9, backgroundColor: '#E8F8F6', alignItems: 'center', justifyContent: 'center'},

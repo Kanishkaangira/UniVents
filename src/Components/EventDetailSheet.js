@@ -1,5 +1,5 @@
 ﻿import React, {useState} from 'react';
-import {Image, Modal, StyleSheet, Text, TouchableOpacity, View} from 'react-native';
+import {Alert, Image, Modal, StyleSheet, Text, TouchableOpacity, View} from 'react-native';
 import LinearGradient from 'react-native-linear-gradient';
 import Icon from 'react-native-vector-icons/Ionicons';
 import BottomSheet from './BottomSheet';
@@ -10,7 +10,8 @@ import {fmtDateTime} from '../Services/mappers';
 
 export default function EventDetailSheet({event, visible, onClose}) {
   const [fullImage, setFullImage] = useState(false);
-  const {registered, saved, departments, clubs, toggleRegister, toggleSave} = useApp();
+  const [registering, setRegistering] = useState(false);
+  const {registered, saved, departments, clubs, registerForEvent, toggleSave} = useApp();
   if (!event) return null;
 
   const closeDetails = () => {
@@ -29,6 +30,18 @@ export default function EventDetailSheet({event, visible, onClose}) {
   const organizerLabel = scopeLabel || event.org;
   const open = event.status === 'upcoming' || event.status === 'live';
   const closed = !open || (event.deadline && event.deadline < new Date());
+  const handleRegistration = async () => {
+    if (registering) return;
+    setRegistering(true);
+    try {
+      const didRegister = await registerForEvent(event.id);
+      if (didRegister) Alert.alert('Registration complete', 'Your details have been saved for this event.');
+    } catch (error) {
+      Alert.alert('Could not update registration', error.message || 'Please try again.');
+    } finally {
+      setRegistering(false);
+    }
+  };
   const infoItems = [
     {icon: 'calendar-outline', label: 'DATE', value: event.date, color: '#087E80', background: '#E8F8F6'},
     {icon: 'time-outline', label: 'TIME', value: event.time, color: '#B05D08', background: '#FFF3E4'},
@@ -109,7 +122,7 @@ export default function EventDetailSheet({event, visible, onClose}) {
             {closed ? (
               <PrimaryButton label="Registration closed" variant="soft" onPress={() => {}} />
             ) : (
-              <PrimaryButton label={isReg ? 'Registered · tap to cancel' : 'Register now'} variant={isReg ? 'success' : 'primary'} onPress={() => toggleRegister(event.id)} />
+              <PrimaryButton label={registering ? 'Saving registration…' : isReg ? 'You’re registered' : 'Register now'} variant={isReg ? 'success' : 'primary'} onPress={handleRegistration} disabled={registering || isReg} />
             )}
           </>
         ) : (

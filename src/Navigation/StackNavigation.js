@@ -4,6 +4,7 @@ import {createNativeStackNavigator} from '@react-navigation/native-stack';
 import HomeBottomTabs from './HomeBottomTabs';
 import Login from '../Screens/Login';
 import ProfileSetup from '../Screens/ProfileSetup';
+import AIChat from '../Screens/AIChat';
 import {useApp} from '../Context/AppContext';
 import {colors} from '../Constants/theme';
 
@@ -35,7 +36,10 @@ export default function StackNavigation() {
       ) : profileStatus !== 'complete' ? (
         <Stack.Screen name="ProfileSetup" component={ProfileSetup} />
       ) : (
-        <Stack.Screen name="Main" component={HomeBottomTabs} />
+        <Stack.Group>
+          <Stack.Screen name="Main" component={HomeBottomTabs} />
+          <Stack.Screen name="AIChat" component={AIChat} options={{animation: 'slide_from_right'}} />
+        </Stack.Group>
       )}
     </Stack.Navigator>
   );

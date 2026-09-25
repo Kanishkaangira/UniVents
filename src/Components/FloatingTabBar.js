@@ -4,19 +4,17 @@ import LinearGradient from 'react-native-linear-gradient';
 import Icon from 'react-native-vector-icons/Ionicons';
 import {useSafeAreaInsets} from 'react-native-safe-area-context';
 import {colors} from '../Constants/theme';
-import {useApp} from '../Context/AppContext';
 
 const ICONS = {
   Home: ['home-outline', 'home'],
   Events: ['calendar-outline', 'calendar'],
-  Notice: ['notifications-outline', 'notifications'],
+  Notice: ['document-text-outline', 'document-text'],
   Profile: ['person-outline', 'person'],
 };
 
 // Custom floating bottom bar – plugged in via <Tab.Navigator tabBar={...} />
 export default function FloatingTabBar({state, navigation}) {
   const insets = useSafeAreaInsets();
-  const {unreadCount} = useApp();
 
   return (
     <View style={[styles.bar, {bottom: Math.max(insets.bottom, 12) + 4}]}>
@@ -42,7 +40,6 @@ export default function FloatingTabBar({state, navigation}) {
             ) : (
               <View style={styles.pill}>
                 {content}
-                {route.name === 'Notice' && unreadCount > 0 && <View style={styles.dot} />}
               </View>
             )}
           </TouchableOpacity>
@@ -57,5 +54,4 @@ const styles = StyleSheet.create({
   pill: {height: 46, paddingHorizontal: 14, borderRadius: 20, flexDirection: 'row', alignItems: 'center', gap: 7},
   active: {shadowColor: colors.primary, shadowOpacity: 0.4, shadowRadius: 10, shadowOffset: {width: 0, height: 6}, elevation: 6},
   label: {color: '#fff', fontSize: 13, fontWeight: '700'},
-  dot: {position: 'absolute', top: 8, right: 9, width: 9, height: 9, borderRadius: 5, backgroundColor: colors.accent, borderWidth: 2, borderColor: '#fff'},
 });

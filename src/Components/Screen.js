@@ -6,11 +6,22 @@ import {colors} from '../Constants/theme';
 
 // Common page wrapper: background, top glow, safe-area padding, space for the floating tab bar,
 // optional pull-to-refresh
-export default function Screen({children, refreshing, onRefresh}) {
+export default function Screen({children, refreshing, onRefresh, bubbles = true}) {
   const insets = useSafeAreaInsets();
   return (
     <View style={styles.root}>
-      <LinearGradient colors={['#DDD8FF', colors.bg]} style={styles.glow} />
+      <LinearGradient
+        colors={['#E6E2FF', '#F0F0FC', colors.bg]}
+        locations={[0, 0.48, 1]}
+        style={StyleSheet.absoluteFill}
+      />
+      {bubbles && (
+        <View pointerEvents="none" style={StyleSheet.absoluteFill}>
+          <View style={[styles.bubble, styles.bubbleOne]} />
+          <View style={[styles.bubble, styles.bubbleTwo]} />
+          <View style={[styles.bubble, styles.bubbleThree]} />
+        </View>
+      )}
       <ScrollView
         showsVerticalScrollIndicator={false}
         keyboardShouldPersistTaps="handled"
@@ -24,5 +35,8 @@ export default function Screen({children, refreshing, onRefresh}) {
 
 const styles = StyleSheet.create({
   root: {flex: 1, backgroundColor: colors.bg},
-  glow: {position: 'absolute', top: 0, left: 0, right: 0, height: 260},
+  bubble: {position: 'absolute', borderRadius: 999, borderWidth: 1, borderColor: 'rgba(255,255,255,0.72)'},
+  bubbleOne: {width: 235, height: 235, top: 78, right: -125, backgroundColor: '#E1DCFF'},
+  bubbleTwo: {width: 185, height: 185, top: 340, left: -103, backgroundColor: '#DDF5F1'},
+  bubbleThree: {width: 250, height: 250, bottom: 45, right: -140, backgroundColor: '#FFE9DD'},
 });

@@ -63,6 +63,19 @@ export const fetchPosts = userType =>
     .order('created_at', {ascending: false})
     .then(check);
 
+// Registration records are owned by the signed-in user. Profile fields are
+// copied server-side by register_for_event so clients cannot forge snapshots.
+export const fetchMyRegistrations = userId =>
+  supabase
+    .from('event_registrations')
+    .select('event_id')
+    .eq('user_id', userId)
+    .then(check)
+    .then(rows => Object.fromEntries(rows.map(row => [row.event_id, true])));
+
+export const registerForEvent = eventId =>
+  supabase.rpc('register_for_event', {p_event_id: eventId}).then(check);
+
 export const signInWithEmail = (email, password) =>
   supabase.auth.signInWithPassword({email, password});
 

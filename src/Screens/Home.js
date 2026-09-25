@@ -1,11 +1,11 @@
 import React, {useMemo, useState} from 'react';
-import {ActivityIndicator, FlatList, StyleSheet, Text, TouchableOpacity, View} from 'react-native';
+import {ActivityIndicator, StyleSheet, Text, TouchableOpacity, View} from 'react-native';
 import LinearGradient from 'react-native-linear-gradient';
+import Icon from 'react-native-vector-icons/Ionicons';
 import Screen from '../Components/Screen';
 import ScreenHeader from '../Components/ScreenHeader';
 import SectionHeader from '../Components/SectionHeader';
 import StatTile from '../Components/StatTile';
-import FeaturedCard from '../Components/FeaturedCard';
 import MiniCalendar from '../Components/MiniCalendar';
 import EventCard from '../Components/EventCard';
 import EventDetailSheet from '../Components/EventDetailSheet';
@@ -15,7 +15,7 @@ import {useApp} from '../Context/AppContext';
 const pad = n => String(n).padStart(2, '0');
 
 export default function Home({navigation}) {
-  const {profile, events, registered, saved, toggleSave, unreadCount, count, loading, refresh} = useApp();
+  const {profile, events, registered, saved, toggleSave, loading, refresh} = useApp();
   const now = new Date();
   const [cursor, setCursor] = useState({year: now.getFullYear(), month: now.getMonth()});
   const [day, setDay] = useState(now.getDate());
@@ -23,7 +23,9 @@ export default function Home({navigation}) {
 
   const active = useMemo(() => events.filter(e => e.status === 'upcoming' || e.status === 'live'), [events]);
   const live = active.find(e => e.status === 'live');            // status = 'live'
-  const featured = useMemo(() => active.slice(0, 5), [active]);   // events are already sorted by event_date
+  const todayKey = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
+  const upcomingEvents = active.filter(event => event.dateISO && event.dateISO >= todayKey);
+  const registeredEvents = events.filter(event => registered[event.id]);
 
   // { 24: [events], 28: [events] ... } for the month shown in the calendar
   const byDay = useMemo(() => {
@@ -49,11 +51,11 @@ export default function Home({navigation}) {
 
   return (
     <>
-      <Screen refreshing={loading} onRefresh={refresh}>
+      <Screen refreshing={loading} onRefresh={refresh} bubbles>
         <ScreenHeader brand />
 
         <Text style={styles.hi}>{greeting},</Text>
-        <Text style={styles.name}>{profile?.user_name || 'there'} 👋</Text>
+        <Text style={styles.name}>{profile?.user_name || 'there'}</Text>
 
         {loading && !events.length && <ActivityIndicator color={colors.primary} style={{marginVertical: 20}} />}
 
@@ -73,25 +75,36 @@ export default function Home({navigation}) {
         )}
 
         <View style={styles.tiles}>
-          <StatTile value={active.length} label="📅 Upcoming" onPress={() => navigation.navigate('Events')} />
-          <StatTile value={unreadCount} label="📢 Unread" onPress={() => navigation.navigate('Notice')} />
-          <StatTile value={count(registered)} label="🎟️ Registered" onPress={() => navigation.navigate('Profile')} />
+          <StatTile
+            value={upcomingEvents.length}
+            label="Upcoming Events"
+            detail={upcomingEvents.length ? 'Open campus events to explore' : 'New events will appear here'}
+            icon="calendar-outline"
+            tint="#342078"
+            tintBackground="#D5CBF4"
+            onPress={() => navigation.getParent()?.navigate('Events')}
+          />
+          <StatTile
+            value={registeredEvents.length}
+            label="Registered Events"
+            detail={registeredEvents.length ? 'Your event schedule' : 'Events you join will show here'}
+            icon="ticket-outline"
+            tint="#342078"
+            tintBackground="#D5CBF4"
+            onPress={() => registeredEvents[0] && setSelected(registeredEvents[0])}
+          />
         </View>
 
-        {!!featured.length && (
-          <>
-            <SectionHeader title="Featured events" note="See all" onPress={() => navigation.navigate('Events')} />
-            <FlatList
-              horizontal
-              data={featured}
-              keyExtractor={item => item.id}
-              showsHorizontalScrollIndicator={false}
-              style={{marginHorizontal: -18, marginBottom: 18}}
-              contentContainerStyle={{paddingHorizontal: 18, paddingVertical: 6, gap: 12}}
-              renderItem={({item}) => <FeaturedCard item={item} onPress={() => setSelected(item)} />}
-            />
-          </>
-        )}
+        <TouchableOpacity
+          accessibilityRole="button"
+          accessibilityLabel="Ask UniVents AI"
+          activeOpacity={0.88}
+          style={styles.aiPrompt}
+          onPress={() => navigation.getParent()?.navigate('AIChat')}>
+          <View style={styles.aiIcon}><Icon name="sparkles" size={19} color={colors.primary} /></View>
+          <Text style={styles.aiPromptText}>Ask UniVents AI anything…</Text>
+          <View style={styles.aiArrow}><Icon name="arrow-forward" size={17} color="#fff" /></View>
+        </TouchableOpacity>
 
         <SectionHeader title="Calendar" />
         <MiniCalendar
@@ -108,7 +121,7 @@ export default function Home({navigation}) {
         <SectionHeader title={isThisMonth && day === now.getDate() ? 'Today' : `${day} ${['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'][cursor.month]}`} note={`${dayEvents.length} event${dayEvents.length === 1 ? '' : 's'}`} />
         {dayEvents.length ? (
           dayEvents.map(item => (
-            <EventCard key={item.id} item={item} saved={!!saved[item.id]} onToggleSave={() => toggleSave(item.id)} onPress={() => setSelected(item)} />
+            <EventCard key={item.id} item={item} large saved={!!saved[item.id]} onToggleSave={() => toggleSave(item.id)} onPress={() => setSelected(item)} />
           ))
         ) : (
           <View style={styles.empty}><Text style={styles.emptyTxt}>No events on this day 🎉</Text></View>
@@ -133,6 +146,10 @@ const styles = StyleSheet.create({
   heroBtn: {alignSelf: 'flex-start', backgroundColor: '#fff', paddingHorizontal: 18, paddingVertical: 10, borderRadius: 14},
   heroBtnTxt: {color: colors.primary, fontSize: 13, fontWeight: '800'},
   tiles: {flexDirection: 'row', gap: 10, marginBottom: 20},
+  aiPrompt: {flexDirection: 'row', alignItems: 'center', gap: 11, backgroundColor: '#fff', borderWidth: 1, borderColor: '#E4E1FF', borderRadius: 18, padding: 10, marginBottom: 22, ...shadow, shadowOpacity: 0.08, shadowRadius: 10, elevation: 3},
+  aiIcon: {width: 38, height: 38, borderRadius: 13, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.soft},
+  aiPromptText: {flex: 1, fontSize: 13, fontWeight: '600', color: '#9297B0'},
+  aiArrow: {width: 34, height: 34, borderRadius: 12, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.primary},
   empty: {backgroundColor: '#fff', borderRadius: 18, padding: 18, alignItems: 'center'},
   emptyTxt: {color: colors.mute, fontWeight: '600'},
 });

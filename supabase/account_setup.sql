@@ -27,8 +27,8 @@ begin
 end
 $$;
 
--- Allow only lowercase roll number emails: 4-20 ASCII lowercase letters/digits,
--- at least one digit, followed by @svsu.ac.in. No dots or plus-tags.
+-- Accept student roll-number and faculty username emails under the SVSU domain.
+-- Student roll-number rules are enforced by the profile INSERT/UPDATE policies.
 create or replace function public.hook_restrict_signup_to_roll_emails(event jsonb)
 returns jsonb
 language plpgsql
@@ -38,23 +38,12 @@ set search_path = ''
 as $$
 declare
   signup_email text := event->'user'->>'email';
-  local_part text;
 begin
-  if signup_email is null or signup_email !~ '^[a-z0-9]{4,20}@svsu[.]ac[.]in$' then
+  if signup_email is null or signup_email !~ '^[a-z0-9._-]+@svsu[.]ac[.]in$' then
     return jsonb_build_object(
       'error', jsonb_build_object(
         'http_code', 400,
-        'message', 'Only roll number emails like 2301234@svsu.ac.in can create an account.'
-      )
-    );
-  end if;
-
-  local_part := split_part(signup_email, '@', 1);
-  if local_part !~ '[0-9]' then
-    return jsonb_build_object(
-      'error', jsonb_build_object(
-        'http_code', 400,
-        'message', 'Only roll number emails like 2301234@svsu.ac.in can create an account.'
+        'message', 'Use a valid SVSU university email ending in @svsu.ac.in.'
       )
     );
   end if;

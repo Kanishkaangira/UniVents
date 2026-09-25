@@ -7,7 +7,7 @@ import {useApp} from '../Context/AppContext';
 const SEARCH_KEYS = ['title', 'source', 'text', 'tag'];
 
 export default function Notice() {
-  const {noticeTree, read, markRead} = useApp();
+  const {noticeTree, markRead} = useApp();
   const [selected, setSelected] = useState(null);
 
   const open = item => {
@@ -25,7 +25,7 @@ export default function Notice() {
         searchKeys={SEARCH_KEYS}
         searchPlaceholder="Search notices…"
         renderItem={item => (
-          <NoticeCard key={item.id} item={item} unread={!read[item.id]} onPress={() => open(item)} />
+          <NoticeCard key={item.id} item={item} onPress={() => open(item)} />
         )}
       />
       <NoticeDetailSheet notice={selected} visible={!!selected} onClose={() => setSelected(null)} />

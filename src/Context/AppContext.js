@@ -22,7 +22,7 @@ export function AppProvider({children}) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
 
-  // ---- local-only state (the schema has no registrations / saved / read tables) ----
+  // ---- local preferences + persisted registrations ----
   const [registered, setRegistered] = useState({});
   const [saved, setSaved] = useState({});
   const [read, setRead] = useState({});
@@ -49,6 +49,7 @@ export function AppProvider({children}) {
       setDepartments([]);
       setClubs([]);
       setPosts([]);
+      setRegistered({});
       setError(null);
       setLoading(false);
       return;
@@ -73,6 +74,12 @@ export function AppProvider({children}) {
       setDepartments(deps);
       setClubs(cls);
       setPosts(rows);
+      try {
+        setRegistered(await api.fetchMyRegistrations(session.user.id));
+      } catch {
+        // Keep the feed available if the optional registrations migration has not run yet.
+        setRegistered({});
+      }
     } catch (e) {
       if (currentUserId.current === requestUserId) {
         setError(e.message);
@@ -110,7 +117,13 @@ export function AppProvider({children}) {
       noticeTree: buildTree(notices, departments, clubs),
       myDepartment: departments.find(d => d.id === profile?.department_id),
       registered, saved, read,
-      toggleRegister: toggle(setRegistered),
+      registerForEvent: async id => {
+        if (!profile?.id) throw new Error('Sign in and complete your profile before registering.');
+        if (registered[id]) return false;
+        await api.registerForEvent(id);
+        setRegistered(prev => ({...prev, [id]: true}));
+        return true;
+      },
       toggleSave: toggle(setSaved),
       markRead: id => setRead(prev => ({...prev, [id]: true})),
       unreadCount: notices.filter(n => !read[n.id]).length,
