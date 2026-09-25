@@ -1,7 +1,12 @@
 import {supabase} from './supabase';
 
 const check = ({data, error}) => {
-  if (error) throw new Error(error.message);
+  if (error) {
+    if (error.code === 'PGRST204' && /enroll_no/i.test(error.message)) {
+      throw new Error('The profiles table is missing enroll_no. Run supabase/account_setup.sql in the Supabase SQL Editor, then retry.');
+    }
+    throw new Error(error.message);
+  }
   return data;
 };
 
@@ -16,12 +21,37 @@ export const fetchClubs = () =>
 export const fetchMyProfile = userId =>
   supabase.from('profiles').select('*').eq('id', userId).maybeSingle().then(check);
 
-export const createMyProfile = (userId, email, fields) =>
-  supabase.from('profiles').upsert({id: userId, email, ...fields}, {onConflict: 'id'}).select('*').single().then(check);
+// A profile is created once, right after the email code is verified. Its id/email
+// always come from Supabase Auth, keeping profiles.id linked to auth.users.id.
+export const createMyProfile = async fields => {
+  const {data, error} = await supabase.auth.getUser();
+  if (error) throw new Error(error.message);
+  if (!data.user) throw new Error('Your session expired. Sign in again to finish your profile.');
 
-// Only the columns allowed by the database: user_name, department_id, course, batch, semester
-export const updateMyProfile = (userId, fields) =>
-  supabase.from('profiles').update(fields).eq('id', userId).select().single().then(check);
+  return supabase
+    .from('profiles')
+    .insert({id: data.user.id, email: data.user.email, ...fields})
+    .select('*')
+    .single()
+    .then(check);
+};
+
+// Password for later sign-ins (the account itself is created with the email code, without a password)
+export const setMyPassword = password =>
+  supabase.auth.updateUser({password, data: {password_set: true}});
+
+// Update the authenticated user's editable profile fields in Supabase.
+export const updateMyProfile = async fields => {
+  const {data, error} = await supabase.auth.getUser();
+  if (error) throw new Error(error.message);
+  if (!data.user) throw new Error('Your session expired. Sign in again to edit your profile.');
+
+  const result = await supabase.from('profiles').update(fields).eq('id', data.user.id).select().single();
+  if (result.error?.code === '42501') {
+    throw new Error('Supabase blocked this profile update. Run the latest supabase/account_setup.sql to add the profile update policy, then retry.');
+  }
+  return check(result);
+};
 
 // Events AND notices come from the same table (`events`). RLS already hides rows the user may not see;
 // the visibility filter is repeated here so the query is explicit.
@@ -30,7 +60,7 @@ export const fetchPosts = userType =>
     .from('events')
     .select('*')
     .in('visibility', ['all', userType])
-    .neq('status', 'completed')
+    .order('created_at', {ascending: false})
     .then(check);
 
 export const signInWithEmail = (email, password) =>

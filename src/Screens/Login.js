@@ -1,9 +1,10 @@
-import React, {useState} from 'react';
+import React, {useEffect, useState} from 'react';
 import {Alert, StyleSheet, Text, TextInput, TouchableOpacity, View} from 'react-native';
 import Screen from '../Components/Screen';
 import AppLogo from '../Components/AppLogo';
 import PrimaryButton from '../Components/PrimaryButton';
 import {UNIVERSITY_EMAIL_DOMAIN} from '../Constants/env';
+import {ROLL_EMAIL_EXAMPLE, isUniversityEmail, rollNumberFromEmail} from '../Services/emailRules';
 import {colors, shadow} from '../Constants/theme';
 import {useApp} from '../Context/AppContext';
 
@@ -17,14 +18,25 @@ export default function Login() {
   const [sentTo, setSentTo] = useState('');
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState('');
+  const [cooldown, setCooldown] = useState(0); // seconds before a new code can be requested
 
+  useEffect(() => {
+    if (cooldown <= 0) return undefined;
+    const t = setTimeout(() => setCooldown(cooldown - 1), 1000);
+    return () => clearTimeout(t);
+  }, [cooldown]);
+
+  // Creating an account needs a roll number email; signing in accepts any university email (e.g. faculty)
   const validateEmail = () => {
     const mail = email.trim().toLowerCase();
-    if (!/^\S+@\S+\.\S+$/.test(mail)) {
-      Alert.alert('Check your email', 'Enter a valid university email address.');
-      return null;
+    if (mode === 'signup') {
+      if (!rollNumberFromEmail(mail)) {
+        Alert.alert('Roll number email required', `Create your account with your roll number email, for example ${ROLL_EMAIL_EXAMPLE}.`);
+        return null;
+      }
+      return mail;
     }
-    if (UNIVERSITY_EMAIL_DOMAIN && !mail.endsWith(UNIVERSITY_EMAIL_DOMAIN)) {
+    if (!isUniversityEmail(mail)) {
       Alert.alert('University email required', `Use an email ending in ${UNIVERSITY_EMAIL_DOMAIN}.`);
       return null;
     }
@@ -36,7 +48,29 @@ export default function Login() {
     return code ? `${error.message} (${code})` : (error?.message || 'Unknown authentication error.');
   };
 
+  const showSignupError = error => {
+    const code = String(error?.code || '').toLowerCase();
+    const detail = String(error?.message || '');
+    const normalizedDetail = detail.toLowerCase();
+
+    if (code === 'over_email_send_rate_limit' || code === 'over_request_rate_limit' || /rate.?limit|too many requests/.test(normalizedDetail)) {
+      Alert.alert('Please wait before trying again', 'Too many verification emails were requested. Wait a minute, then request another code.');
+      return;
+    }
+
+    if (/only roll number emails|roll.number email|hook_restrict_signup_to_roll_emails/.test(normalizedDetail)) {
+      Alert.alert('Student email required', 'Use your SVSU roll number email, such as 2301234@svsu.ac.in, to create an account.');
+      return;
+    }
+
+    Alert.alert(
+      'Could not send verification code',
+      `Check that the email address is correct and try again. If it continues, ask the app administrator to check Supabase Auth email settings. ${describeAuthError(error)}`,
+    );
+  };
+
   const submit = async () => {
+    if (mode === 'signup' && otpSent && cooldown > 0) return;
     const mail = validateEmail();
     if (!mail) return;
     if (mode === 'signin' && !password) return Alert.alert('Password required', 'Enter your password to continue.');
@@ -46,17 +80,12 @@ export default function Login() {
       if (mode === 'signup') {
         const {error} = await requestEmailOnlyOtp(mail);
         if (error) {
-          const limited = /rate.?limit|too many requests|email.*limit/i.test(error.message || '');
-          Alert.alert(
-            limited ? 'Email sending limit reached' : 'Could not send verification code',
-            limited
-              ? 'The email provider has temporarily limited messages for this project. Please try later or check your SMTP provider limits.'
-              : describeAuthError(error),
-          );
+          showSignupError(error);
         } else {
           setOtpSent(true);
+          setCooldown(60);
           setSentTo(mail);
-          setMessage(`Enter the verification code sent to ${mail}.`);
+          setMessage('Check your inbox or spam folder for the 6-digit code.');
         }
       } else {
         const err = await signIn(mail, password);
@@ -66,7 +95,8 @@ export default function Login() {
         }
       }
     } catch (e) {
-      Alert.alert(mode === 'signup' ? 'Could not send verification code' : 'Sign in failed', describeAuthError(e));
+      if (mode === 'signup') showSignupError(e);
+      else Alert.alert('Sign in failed', describeAuthError(e));
     } finally {
       setBusy(false);
     }
@@ -103,7 +133,7 @@ export default function Login() {
     setMessage('');
   };
 
-  const placeholder = UNIVERSITY_EMAIL_DOMAIN ? `rollno+${UNIVERSITY_EMAIL_DOMAIN}` : 'name@university.edu';
+  const placeholder = mode === 'signup' ? `rollno${UNIVERSITY_EMAIL_DOMAIN}` : `email${UNIVERSITY_EMAIL_DOMAIN}`;
 
   return (
     <Screen>
@@ -168,12 +198,20 @@ export default function Login() {
           />
         </> : null}
 
+        {mode === 'signup' && otpSent && (
+          <TouchableOpacity disabled={busy || cooldown > 0} onPress={submit}>
+            <Text style={[styles.resend, (busy || cooldown > 0) && {color: colors.mute}]}>
+              {cooldown > 0 ? `Resend code in ${cooldown}s` : 'Resend code'}
+            </Text>
+          </TouchableOpacity>
+        )}
+
         {!!message && <Text style={styles.message}>{message}</Text>}
         <Text style={styles.hint}>
           {mode === 'signup'
             ? otpSent
               ? 'The code verifies your university email and signs you in. Then complete your profile.'
-              : 'Enter your university email. We will send a 6-digit code; no password is needed to create an account.'
+              : `Use your roll number email (${ROLL_EMAIL_EXAMPLE}). We will send a 6-digit code to verify it.`
             : 'Sign in with your email and password.'}
         </Text>
         <PrimaryButton
@@ -199,5 +237,6 @@ const styles = StyleSheet.create({
   label: {fontSize: 12, fontWeight: '700', color: colors.mute, marginTop: 12, marginBottom: 6},
   input: {borderWidth: 1.5, borderColor: colors.line, backgroundColor: '#F8F9FF', borderRadius: 14, paddingHorizontal: 14, paddingVertical: 12, fontSize: 14, fontWeight: '600', color: colors.ink},
   hint: {fontSize: 11.5, lineHeight: 17, color: colors.mute, marginTop: 12},
-  message: {fontSize: 12, lineHeight: 18, color: colors.success, marginTop: 12},
+  message: {fontSize: 12, lineHeight: 17, color: colors.mute, marginTop: 10},
+  resend: {fontSize: 12.5, fontWeight: '700', color: colors.primary, marginTop: 12},
 });

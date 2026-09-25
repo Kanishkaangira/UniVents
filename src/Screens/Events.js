@@ -1,5 +1,5 @@
 import React, {useState} from 'react';
-import FeedScreen from '../Components/FeedScreen';
+import FeedScreen from '../Components/ContentFeedScreen';
 import EventCard from '../Components/EventCard';
 import EventDetailSheet from '../Components/EventDetailSheet';
 import {useApp} from '../Context/AppContext';
@@ -23,6 +23,7 @@ export default function Events() {
           <EventCard
             key={item.id}
             item={item}
+            large
             saved={!!saved[item.id]}
             onToggleSave={() => toggleSave(item.id)}
             onPress={() => setSelected(item)}

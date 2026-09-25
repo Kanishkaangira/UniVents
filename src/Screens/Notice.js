@@ -1,5 +1,5 @@
 import React, {useState} from 'react';
-import FeedScreen from '../Components/FeedScreen';
+import FeedScreen from '../Components/ContentFeedScreen';
 import NoticeCard from '../Components/NoticeCard';
 import NoticeDetailSheet from '../Components/NoticeDetailSheet';
 import {useApp} from '../Context/AppContext';

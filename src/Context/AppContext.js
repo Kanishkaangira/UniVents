@@ -34,7 +34,11 @@ export function AppProvider({children}) {
       setSession(data.session);
       setBooting(false);
     });
-    const {data} = supabase.auth.onAuthStateChange((_event, s) => setSession(s));
+    const {data} = supabase.auth.onAuthStateChange((event, s) => {
+      // Setting the password during profile setup must not reload the app state mid-form
+      if (event === 'USER_UPDATED') return;
+      setSession(s);
+    });
     return () => data.subscription.unsubscribe();
   }, []);
 
@@ -114,10 +118,15 @@ export function AppProvider({children}) {
       signIn: async (email, password) => (await api.signInWithEmail(email, password)).error?.message,
       requestEmailOnlyOtp: email => api.requestEmailOnlyOtp(email),
       verifyEmailOtp: (email, token) => api.verifyEmailOtp(email, token),
+      setPassword: async password => {
+        const {error: e} = await api.setMyPassword(password);
+        // retrying after a failed profile save sends the same password again: that is fine
+        if (e && !/different from the old password/i.test(e.message)) throw new Error(e.message);
+      },
       signOut: () => api.signOut(),
-      saveProfile: async fields => setProfile(await api.updateMyProfile(session.user.id, fields)),
+      saveProfile: async fields => setProfile(await api.updateMyProfile(fields)),
       completeProfile: async fields => {
-        const created = await api.createMyProfile(session.user.id, session.user.email, fields);
+        const created = await api.createMyProfile(fields);
         setProfile(created);
         setProfileStatus('complete');
         return created;
