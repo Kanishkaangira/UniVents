@@ -6,8 +6,8 @@ import {buildTree, mapPost} from '../Services/mappers';
 const AppContext = createContext(null);
 
 const profileIsComplete = row => Boolean(
-  row?.user_name?.trim() && row.user_type && row.department_id &&
-  (row.user_type === 'faculty' || (row.user_type === 'student' && row.enroll_no?.trim() && row.course?.trim() && row.batch?.trim() && row.semester)),
+  row?.user_name?.trim() && row.user_type && (row.user_type === 'administration' || row.department_id) &&
+  (row.user_type === 'faculty' || row.user_type === 'administration' || (row.user_type === 'student' && row.enroll_no?.trim() && row.course?.trim() && row.batch?.trim() && row.semester)),
 );
 
 export function AppProvider({children}) {

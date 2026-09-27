@@ -9,7 +9,12 @@ import {colors, gradients, shadow} from '../Constants/theme';
 import {useApp} from '../Context/AppContext';
 import {rollNumberFromEmail} from '../Services/emailRules';
 
-const EMPTY_FORM = {user_name: '', user_type: '', department_id: '', course: '', batch: '', semester: '', password: '', confirm: ''};
+const EMPTY_FORM = {user_name: '', user_type: '', department_id: '', enroll_no: '', course: '', batch: '', semester: '', password: '', confirm: ''};
+const USER_TYPES = [
+  {type: 'student', label: 'Student', icon: 'school-outline'},
+  {type: 'faculty', label: 'Faculty', icon: 'person-outline'},
+  {type: 'administration', label: 'Administration', icon: 'business-outline'},
+];
 const SEMESTER_OPTIONS = Array.from({length: 8}, (_, index) => String(index + 1));
 const BATCH_OPTIONS = Array.from({length: 20}, (_, index) => {
   const startYear = 2018 + index;
@@ -20,9 +25,12 @@ export default function ProfileSetup() {
   const {session, profile, departments, profileStatus, error, refresh, completeProfile, setPassword, signOut} = useApp();
   const roll = rollNumberFromEmail(session?.user?.email);
   const suggestedUserType = roll ? 'student' : 'faculty';
-  const needsPassword = !session?.user?.user_metadata?.password_set;
+  // Require password setup while creating the profile, even if auth metadata
+  // already contains a stale password_set flag from an earlier attempt.
+  const needsPassword = !profile?.id;
   const [form, setForm] = useState(EMPTY_FORM);
   const isStudent = form.user_type === 'student';
+  const isAdministration = form.user_type === 'administration';
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState('');
   const [departmentOpen, setDepartmentOpen] = useState(false);
@@ -36,27 +44,25 @@ export default function ProfileSetup() {
   }, [departments, departmentSearch]);
 
   useEffect(() => {
-    if (profileStatus !== 'missing' || !profile) return;
+    if (profileStatus !== 'missing') return;
     setForm({
       ...EMPTY_FORM,
-      user_type: suggestedUserType,
-      user_name: profile.user_name || '',
-      user_type: profile.user_type || suggestedUserType,
-      department_id: profile.department_id || '',
-      course: profile.course || '',
-      batch: profile.batch || '',
-      semester: profile.semester ? String(profile.semester) : '',
+      user_type: profile?.user_type || suggestedUserType,
+      user_name: profile?.user_name || '',
+      department_id: profile?.department_id || '',
+      enroll_no: profile?.enroll_no || roll || '',
+      course: profile?.course || '',
+      batch: profile?.batch || '',
+      semester: profile?.semester ? String(profile.semester) : '',
     });
   }, [profile, profileStatus, suggestedUserType]);
 
   const submit = async () => {
     const name = form.user_name.trim();
     if (!name) return Alert.alert('Name required', 'Enter your full name to continue.');
-    if (!form.department_id) return Alert.alert('Department required', 'Choose your department to continue.');
-    if (isStudent && !roll) {
-      return Alert.alert('Student email required', 'Student profiles need a roll number email.');
-    }
-    if (isStudent && (!form.course.trim() || !form.batch || !form.semester)) {
+    if (!USER_TYPES.some(option => option.type === form.user_type)) return Alert.alert('Account type required', 'Choose Student, Faculty, or Administration to continue.');
+    if (!isAdministration && !form.department_id) return Alert.alert('Department required', 'Choose your department to continue.');
+    if (isStudent && (!form.enroll_no.trim() || !form.course.trim() || !form.batch || !form.semester)) {
       return Alert.alert('Complete student details', 'Enrollment number, course, batch, and semester are all required.');
     }
     if (isStudent && !SEMESTER_OPTIONS.includes(form.semester)) {
@@ -73,9 +79,9 @@ export default function ProfileSetup() {
       const details = {
         user_name: name,
         user_type: form.user_type,
-        department_id: form.department_id,
+        ...(isAdministration ? {department_id: null} : {department_id: form.department_id}),
         ...(isStudent && {
-          enroll_no: roll,
+          enroll_no: form.enroll_no.trim(),
           course: form.course.trim(),
           batch: form.batch,
           semester: Number(form.semester),
@@ -140,32 +146,34 @@ export default function ProfileSetup() {
         <SectionTitle icon="school-outline" title="Profile details" subtitle="Choose your account type" />
         <Text style={styles.label}>User type</Text>
         <View style={styles.userTypeRow}>
-          {['student', 'faculty'].map(type => {
+          {USER_TYPES.map(({type, label, icon}) => {
             const selected = form.user_type === type;
             return (
-              <TouchableOpacity key={type} accessibilityRole="radio" accessibilityState={{selected}} onPress={() => update('user_type', type)} style={[styles.userTypeOption, selected && styles.userTypeOptionSelected]}>
-                <Icon name={type === 'student' ? 'school-outline' : 'person-outline'} size={18} color={selected ? colors.primary : colors.mute} />
-                <Text style={[styles.userTypeText, selected && styles.userTypeTextSelected]}>{type === 'student' ? 'Student' : 'Faculty'}</Text>
+              <TouchableOpacity key={type} accessibilityRole="radio" accessibilityState={{selected}} onPress={() => update('user_type', type)} style={[styles.userTypeOption, type === 'administration' && styles.userTypeOptionWide, selected && styles.userTypeOptionSelected]}>
+                <Icon name={icon} size={18} color={selected ? colors.primary : colors.mute} />
+                <Text style={[styles.userTypeText, selected && styles.userTypeTextSelected]}>{label}</Text>
                 {selected && <Icon name="checkmark-circle" size={17} color={colors.primary} />}
               </TouchableOpacity>
             );
           })}
         </View>
 
-        <Text style={styles.label}>Department</Text>
-        <TouchableOpacity activeOpacity={0.8} onPress={openDepartments} style={styles.departmentTrigger}>
-          <View style={styles.departmentIcon}><Icon name="business-outline" size={18} color={colors.primary} /></View>
-          <View style={styles.departmentSelected}>
-            <Text numberOfLines={1} style={[styles.departmentSelectedName, !selectedDepartment && styles.placeholder]}>
-              {selectedDepartment?.name || (departments.length ? 'Choose your department' : error ? 'Tap to retry loading' : 'Loading departments…')}
-            </Text>
-            {!!selectedDepartment && <Text style={styles.departmentSelectedCode}>{selectedDepartment.code}</Text>}
-          </View>
-          <Icon name={departments.length ? 'chevron-down' : 'refresh-outline'} size={19} color={colors.mute} />
-        </TouchableOpacity>
+        {!isAdministration && <>
+          <Text style={styles.label}>Department</Text>
+          <TouchableOpacity activeOpacity={0.8} onPress={openDepartments} style={styles.departmentTrigger}>
+            <View style={styles.departmentIcon}><Icon name="business-outline" size={18} color={colors.primary} /></View>
+            <View style={styles.departmentSelected}>
+              <Text numberOfLines={1} style={[styles.departmentSelectedName, !selectedDepartment && styles.placeholder]}>
+                {selectedDepartment?.name || (departments.length ? 'Choose your department' : error ? 'Tap to retry loading' : 'Loading departments…')}
+              </Text>
+              {!!selectedDepartment && <Text style={styles.departmentSelectedCode}>{selectedDepartment.code}</Text>}
+            </View>
+            <Icon name={departments.length ? 'chevron-down' : 'refresh-outline'} size={19} color={colors.mute} />
+          </TouchableOpacity>
+        </>}
 
         {isStudent && <>
-          <ReadOnlyField icon="barcode-outline" label="Roll number" value={roll || 'Could not read roll number'} />
+          <Field label="Enrollment number" value={form.enroll_no} onChangeText={v => update('enroll_no', v)} placeholder="Enter your enrollment number" />
           <Field label="Course" value={form.course} onChangeText={v => update('course', v)} placeholder="e.g. B.Tech Computer Science" />
           <View style={styles.studentOptionsRow}>
             <View style={styles.studentOptionColumn}>
@@ -377,8 +385,9 @@ const styles = StyleSheet.create({
   departmentSelectedName: {fontSize: 12.5, fontWeight: '700', color: colors.ink},
   departmentSelectedCode: {fontSize: 10.5, fontWeight: '700', color: colors.mute, marginTop: 2},
   placeholder: {color: '#9298B1'},
-  userTypeRow: {flexDirection: 'row', gap: 10, marginBottom: 6},
-  userTypeOption: {flex: 1, minHeight: 46, borderWidth: 1, borderColor: colors.line, borderRadius: 13, paddingHorizontal: 9, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 7},
+  userTypeRow: {flexDirection: 'row', flexWrap: 'wrap', gap: 10, marginBottom: 6},
+  userTypeOption: {width: '48%', minHeight: 46, borderWidth: 1, borderColor: colors.line, borderRadius: 13, paddingHorizontal: 9, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 7},
+  userTypeOptionWide: {width: '100%'},
   userTypeOptionSelected: {borderColor: colors.primary, backgroundColor: colors.soft},
   userTypeText: {fontSize: 12, fontWeight: '700', color: colors.mute},
   userTypeTextSelected: {color: colors.primary},

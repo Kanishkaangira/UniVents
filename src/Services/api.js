@@ -59,6 +59,7 @@ export const fetchPosts = userType =>
   supabase
     .from('events')
     .select('*')
+    .eq('approval', 'approved')
     .in('visibility', ['all', userType])
     .order('created_at', {ascending: false})
     .then(check);

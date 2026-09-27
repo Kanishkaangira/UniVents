@@ -38,7 +38,9 @@ export default function Login() {
 
   const describeAuthError = error => {
     const code = error?.code || error?.name;
-    return code ? `${error.message} (${code})` : (error?.message || 'Unknown authentication error.');
+    const status = error?.status ? `HTTP ${error.status}` : '';
+    const diagnostics = [code, status].filter(Boolean).join(', ');
+    return diagnostics ? `${error.message} (${diagnostics})` : (error?.message || 'Unknown authentication error.');
   };
 
   const showSignupError = error => {
@@ -51,8 +53,21 @@ export default function Login() {
       return;
     }
 
+    if (
+      error?.name === 'AuthRetryableFetchError' ||
+      Number(error?.status) >= 500 ||
+      /sending confirmation email|confirmation email/.test(normalizedDetail)
+    ) {
+      const status = error?.status ? ` (HTTP ${error.status})` : '';
+      Alert.alert(
+        'Supabase could not send the email',
+        `The SVSU address passed validation, but Supabase Auth failed while sending its verification email${status}. Check the Supabase Dashboard under Authentication > SMTP Settings and Auth Logs. The project email service may need custom SMTP configured. ${describeAuthError(error)}`,
+      );
+      return;
+    }
+
     if (/svsu email|@svsu\.ac\.in|hook_restrict_signup_to_roll_emails/.test(normalizedDetail)) {
-      Alert.alert('SVSU email required', 'Use your university email ending in @svsu.ac.in. Students should use their roll number; faculty should use their username.');
+      Alert.alert('SVSU email required', 'Use your university email ending in @svsu.ac.in. Students and faculty can use their assigned email username.');
       return;
     }
 
@@ -204,7 +219,7 @@ export default function Login() {
           {mode === 'signup'
             ? otpSent
               ? 'The code verifies your university email and signs you in. Then complete your profile.'
-              : `Use your SVSU email ending in ${UNIVERSITY_EMAIL_DOMAIN}. Students use their roll number; faculty use their username. We will send a 6-digit code to verify it.`
+              : `Use your SVSU email ending in ${UNIVERSITY_EMAIL_DOMAIN}. Students and faculty can use their assigned email username. Students will enter their enrollment number in the next step. We will send a 6-digit code to verify your email.`
             : 'Sign in with your email and password.'}
         </Text>
         <PrimaryButton

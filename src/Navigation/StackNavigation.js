@@ -1,33 +1,25 @@
-import React from 'react';
-import {ActivityIndicator, View} from 'react-native';
+import React, {useEffect, useState} from 'react';
 import {createNativeStackNavigator} from '@react-navigation/native-stack';
 import HomeBottomTabs from './HomeBottomTabs';
 import Login from '../Screens/Login';
 import ProfileSetup from '../Screens/ProfileSetup';
 import AIChat from '../Screens/AIChat';
+import SplashScreen from '../Components/SplashScreen';
 import {useApp} from '../Context/AppContext';
-import {colors} from '../Constants/theme';
 
 const Stack = createNativeStackNavigator();
 
 export default function StackNavigation() {
   const {session, booting, profileStatus} = useApp();
+  const [splashMinimumElapsed, setSplashMinimumElapsed] = useState(false);
 
-  if (booting) {
-    return (
-      <View style={{flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.bg}}>
-        <ActivityIndicator color={colors.primary} />
-      </View>
-    );
-  }
+  useEffect(() => {
+    const timer = setTimeout(() => setSplashMinimumElapsed(true), 1300);
+    return () => clearTimeout(timer);
+  }, []);
 
-  if (session && !['complete', 'missing', 'error'].includes(profileStatus)) {
-    return (
-      <View style={{flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.bg}}>
-        <ActivityIndicator color={colors.primary} />
-      </View>
-    );
-  }
+  const startupReady = !booting && (!session || ['complete', 'missing', 'error'].includes(profileStatus));
+  if (!splashMinimumElapsed || !startupReady) return <SplashScreen />;
 
   return (
     <Stack.Navigator screenOptions={{headerShown: false}}>

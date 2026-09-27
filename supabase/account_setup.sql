@@ -27,8 +27,67 @@ begin
 end
 $$;
 
--- Accept student roll-number and faculty username emails under the SVSU domain.
--- Student roll-number rules are enforced by the profile INSERT/UPDATE policies.
+-- Administration profiles may omit a department. Keep it required for all
+-- existing profiles and for newly created student/faculty profiles.
+alter table public.profiles alter column department_id drop not null;
+
+-- The existing student_fields_required constraint must only apply to students.
+-- Keep its student checks, while allowing faculty and administration profiles
+-- to omit student-only academic fields.
+alter table public.profiles
+  drop constraint if exists student_fields_required;
+alter table public.profiles
+  add constraint student_fields_required
+  check (
+    user_type::text <> 'student'
+    or (
+      enroll_no is not null and btrim(enroll_no) <> ''
+      and course is not null and btrim(course) <> ''
+      and batch is not null and btrim(batch) <> ''
+      and semester between 1 and 8
+    )
+  );
+
+-- Add the administrative profile category to the existing user_type enum.
+-- This category does not grant database or application admin privileges.
+do $$
+declare
+  user_type_schema text;
+  user_type_name text;
+begin
+  select column_info.udt_schema, column_info.udt_name
+    into user_type_schema, user_type_name
+  from information_schema.columns as column_info
+  where column_info.table_schema = 'public'
+    and column_info.table_name = 'profiles'
+    and column_info.column_name = 'user_type';
+
+  if user_type_name is null then
+    raise exception 'public.profiles.user_type does not exist';
+  end if;
+
+  if exists (
+    select 1
+    from pg_type as type_info
+    join pg_namespace as namespace_info on namespace_info.oid = type_info.typnamespace
+    where namespace_info.nspname = user_type_schema
+      and type_info.typname = user_type_name
+      and type_info.typtype = 'e'
+  ) then
+    execute format(
+      'alter type %I.%I add value if not exists %L',
+      user_type_schema,
+      user_type_name,
+      'administration'
+    );
+  else
+    raise notice 'profiles.user_type is not a PostgreSQL enum; no enum value was added';
+  end if;
+end
+$$;
+
+-- Accept flexible student and faculty email usernames under the SVSU domain.
+-- Student enrollment numbers are collected in their profile, independently of email.
 create or replace function public.hook_restrict_signup_to_roll_emails(event jsonb)
 returns jsonb
 language plpgsql
@@ -39,7 +98,7 @@ as $$
 declare
   signup_email text := event->'user'->>'email';
 begin
-  if signup_email is null or signup_email !~ '^[a-z0-9._-]+@svsu[.]ac[.]in$' then
+  if signup_email is null or signup_email !~* '^[^@]+@svsu[.]ac[.]in$' then
     return jsonb_build_object(
       'error', jsonb_build_object(
         'http_code', 400,
@@ -56,7 +115,7 @@ revoke all on function public.hook_restrict_signup_to_roll_emails(jsonb) from pu
 grant execute on function public.hook_restrict_signup_to_roll_emails(jsonb) to supabase_auth_admin;
 
 -- Require the authenticated user to create their own profile. Student profiles
--- must include the roll number and academic details; faculty profiles omit them.
+-- must include their enrollment number and academic details; faculty omit those fields.
 alter table public.profiles enable row level security;
 
 -- Remove previous INSERT-specific policies so permissive policies cannot OR-bypass this rule.
@@ -85,16 +144,19 @@ create policy profiles_insert_own_student_roll_email
   with check (
     id = (select auth.uid())
     and email = (select auth.jwt() ->> 'email')
+    and (user_type::text = 'administration' or department_id is not null)
     and (
       (
         user_type = 'student'
-        and email ~ '^[a-z0-9]{4,20}@svsu[.]ac[.]in$'
-        and split_part(email, '@', 1) ~ '[0-9]'
-        and enroll_no = split_part((select auth.jwt() ->> 'email'), '@', 1)
+        and enroll_no is not null and btrim(enroll_no) <> ''
         and course is not null and batch is not null and semester between 1 and 8
       )
       or (
         user_type = 'faculty'
+        and enroll_no is null and course is null and batch is null and semester is null
+      )
+      or (
+        user_type::text = 'administration'
         and enroll_no is null and course is null and batch is null and semester is null
       )
     )
@@ -110,23 +172,26 @@ create policy profiles_insert_own_student_roll_email_guard
   with check (
     id = (select auth.uid())
     and email = (select auth.jwt() ->> 'email')
+    and (user_type::text = 'administration' or department_id is not null)
     and (
       (
         user_type = 'student'
-        and email ~ '^[a-z0-9]{4,20}@svsu[.]ac[.]in$'
-        and split_part(email, '@', 1) ~ '[0-9]'
-        and enroll_no = split_part((select auth.jwt() ->> 'email'), '@', 1)
+        and enroll_no is not null and btrim(enroll_no) <> ''
         and course is not null and batch is not null and semester between 1 and 8
       )
       or (
         user_type = 'faculty'
         and enroll_no is null and course is null and batch is null and semester is null
       )
+      or (
+        user_type::text = 'administration'
+        and enroll_no is null and course is null and batch is null and semester is null
+      )
     )
   );
 
 -- Let users edit their own profile fields while preserving the verified email,
--- account type, and email-derived enrollment number.
+-- account type, and the student's enrollment number.
 drop policy if exists profiles_update_own_profile on public.profiles;
 create policy profiles_update_own_profile
   on public.profiles
@@ -138,19 +203,21 @@ create policy profiles_update_own_profile
     id = (select auth.uid())
     and email = (select auth.jwt() ->> 'email')
     and user_name is not null and btrim(user_name) <> ''
-    and department_id is not null
+    and (user_type::text = 'administration' or department_id is not null)
     and (
       (
         user_type = 'student'
-        and email ~ '^[a-z0-9]{4,20}@svsu[.]ac[.]in$'
-        and split_part(email, '@', 1) ~ '[0-9]'
-        and enroll_no = split_part((select auth.jwt() ->> 'email'), '@', 1)
+        and enroll_no is not null and btrim(enroll_no) <> ''
         and course is not null and btrim(course) <> ''
         and batch is not null and btrim(batch) <> ''
         and semester between 1 and 8
       )
       or (
         user_type = 'faculty'
+        and enroll_no is null and course is null and batch is null and semester is null
+      )
+      or (
+        user_type::text = 'administration'
         and enroll_no is null and course is null and batch is null and semester is null
       )
     )
@@ -168,19 +235,21 @@ create policy profiles_update_own_profile_guard
     id = (select auth.uid())
     and email = (select auth.jwt() ->> 'email')
     and user_name is not null and btrim(user_name) <> ''
-    and department_id is not null
+    and (user_type::text = 'administration' or department_id is not null)
     and (
       (
         user_type = 'student'
-        and email ~ '^[a-z0-9]{4,20}@svsu[.]ac[.]in$'
-        and split_part(email, '@', 1) ~ '[0-9]'
-        and enroll_no = split_part((select auth.jwt() ->> 'email'), '@', 1)
+        and enroll_no is not null and btrim(enroll_no) <> ''
         and course is not null and btrim(course) <> ''
         and batch is not null and btrim(batch) <> ''
         and semester between 1 and 8
       )
       or (
         user_type = 'faculty'
+        and enroll_no is null and course is null and batch is null and semester is null
+      )
+      or (
+        user_type::text = 'administration'
         and enroll_no is null and course is null and batch is null and semester is null
       )
     )

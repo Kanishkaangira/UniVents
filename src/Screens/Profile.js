@@ -89,7 +89,7 @@ export default function Profile() {
           </LinearGradient>
           <Text style={styles.name}>{profile.user_name}</Text>
           <Text style={styles.email}>{profile.email}</Text>
-          <Text style={styles.pill}>{isStudent ? 'Student' : 'Faculty'}</Text>
+          <Text style={styles.pill}>{profile.user_type === 'administration' ? 'Administration' : isStudent ? 'Student' : 'Faculty'}</Text>
         </LinearGradient>
 
         <View style={styles.menu}>
