@@ -1,12 +1,12 @@
 import React from 'react';
-import {StyleSheet, Text, View} from 'react-native';
+import {StyleSheet, Text, TouchableOpacity, View} from 'react-native';
 import Icon from 'react-native-vector-icons/Ionicons';
 import AppLogo from './AppLogo';
 import {colors, shadow} from '../Constants/theme';
 import {useApp} from '../Context/AppContext';
 
 // brand=true -> logo + app name + bell (Home). Otherwise -> small title block (other screens)
-export default function ScreenHeader({title, subtitle, brand}) {
+export default function ScreenHeader({title, subtitle, brand, onBellPress}) {
   const {unreadCount} = useApp();
   if (brand) {
     return (
@@ -18,10 +18,10 @@ export default function ScreenHeader({title, subtitle, brand}) {
             <Text style={styles.tagline}>Every event. Every notice.</Text>
           </View>
         </View>
-        <View style={styles.bell}>
+        <TouchableOpacity accessibilityRole="button" accessibilityLabel="Open notifications" activeOpacity={0.75} style={styles.bell} onPress={onBellPress}>
           <Icon name="notifications-outline" size={20} color={colors.ink} />
           {unreadCount > 0 && <View style={styles.dot} />}
-        </View>
+        </TouchableOpacity>
       </View>
     );
   }

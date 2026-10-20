@@ -116,7 +116,9 @@ export function buildTree(items, skillFaculties, departments, clubs) {
       if (faculty && tree['Skill Faculty'][faculty.code]) {
         tree['Skill Faculty'][faculty.code].__all_departments__.push({
           ...i,
-          scopeLabel: faculty.code,
+          org: faculty.name,
+          source: faculty.name,
+          scopeLabel: faculty.name,
           scopeName: faculty.name,
           skillFacultyName: faculty.name,
         });
@@ -131,7 +133,9 @@ export function buildTree(items, skillFaculties, departments, clubs) {
         if (tree['Skill Faculty'][faculty.code][departmentKey]) {
           tree['Skill Faculty'][faculty.code][departmentKey].push({
             ...i,
-            scopeLabel: department?.code || faculty.code,
+            org: department?.name || faculty.name,
+            source: department?.name || faculty.name,
+            scopeLabel: department?.name || faculty.name,
             scopeName: department?.name || faculty.name,
             skillFacultyName: faculty.name,
           });

@@ -2,8 +2,11 @@ import {supabase} from './supabase';
 
 const check = ({data, error}) => {
   if (error) {
-    if (error.code === 'PGRST204' && /enroll_no/i.test(error.message)) {
-      throw new Error('The profiles table is missing enroll_no. Run supabase/account_setup.sql in the Supabase SQL Editor, then retry.');
+    if (error.code === 'PGRST204' && /enroll_no|skill_faculty_id/i.test(error.message)) {
+      throw new Error('The profiles table is missing profile fields. Run supabase/account_setup.sql and supabase/profile_skill_faculty_scope.sql in the Supabase SQL Editor, then retry.');
+    }
+    if (error.code === '23503' && /profiles_department_id_fkey|profiles_skill_faculty_id_fkey/i.test(`${error.message} ${error.details || ''}`)) {
+      throw new Error('Profile faculty or department setup is out of date. Run supabase/profile_skill_faculty_scope.sql in the Supabase SQL Editor, then retry.');
     }
     throw new Error(error.message);
   }
@@ -65,6 +68,15 @@ export const fetchPosts = userType =>
     .eq('approval', 'approved')
     .in('visibility', ['all', userType])
     .order('created_at', {ascending: false})
+    .then(check);
+
+// Approved event notification snapshots are maintained by the database trigger.
+export const fetchEventNotifications = userType =>
+  supabase
+    .from('event_notifications')
+    .select('*')
+    .in('visibility', ['all', userType])
+    .order('published_at', {ascending: false})
     .then(check);
 
 // Registration records are owned by the signed-in user. Profile fields are

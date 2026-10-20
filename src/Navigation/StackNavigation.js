@@ -5,6 +5,8 @@ import Login from '../Screens/Login';
 import ProfileSetup from '../Screens/ProfileSetup';
 import AIChat from '../Screens/AIChat';
 import SplashScreen from '../Components/SplashScreen';
+import Welcome from '../Screens/Welcome';
+import Notifications from '../Screens/Notifications';
 import {useApp} from '../Context/AppContext';
 
 const Stack = createNativeStackNavigator();
@@ -29,7 +31,9 @@ export default function StackNavigation() {
         <Stack.Screen name="ProfileSetup" component={ProfileSetup} />
       ) : (
         <Stack.Group>
-          <Stack.Screen name="Main" component={HomeBottomTabs} />
+          <Stack.Screen name="Welcome" component={Welcome} options={{animation: 'fade'}} />
+          <Stack.Screen name="Main" component={HomeBottomTabs} options={{animation: 'none'}} />
+          <Stack.Screen name="Notifications" component={Notifications} options={{animation: 'slide_from_right'}} />
           <Stack.Screen name="AIChat" component={AIChat} options={{animation: 'slide_from_right'}} />
         </Stack.Group>
       )}

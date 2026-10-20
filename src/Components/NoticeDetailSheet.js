@@ -21,9 +21,8 @@ export default function NoticeDetailSheet({notice, visible, onClose}) {
     ? departments.find(item => item.id === notice.departmentId) || skillFaculties.find(item => item.id === notice.departmentId)
     : null;
   const club = notice.clubId ? clubs.find(item => item.id === notice.clubId) : null;
-  const departmentShort = department?.code || department?.name.split(/\s+/).map(part => part[0]).join('').toUpperCase();
-  const scopeValue = departmentShort || club?.name;
-  const organizerLabel = department ? departmentShort : notice.source;
+  const scopeValue = department?.name || club?.name;
+  const organizerLabel = department ? department.name : notice.source;
   const downloadAttachment = async () => {
     try {
       const pathName = notice.attachmentUrl.split(/[?#]/, 1)[0].split('/').pop();

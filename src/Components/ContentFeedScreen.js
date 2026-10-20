@@ -1,5 +1,5 @@
-import React, {useMemo, useState} from 'react';
-import {ActivityIndicator, StyleSheet, Text, TouchableOpacity, View} from 'react-native';
+import React, {useEffect, useMemo, useRef, useState} from 'react';
+import {ActivityIndicator, Animated, Easing, StyleSheet, Text, TouchableOpacity, View} from 'react-native';
 import Icon from 'react-native-vector-icons/Ionicons';
 import Screen from './Screen';
 import ScreenHeader from './ScreenHeader';
@@ -18,6 +18,7 @@ export default function FeedScreen({title, subtitle, data, noun, searchPlacehold
   const [subs, setSubs] = useState({});
   const [query, setQuery] = useState('');
   const [picker, setPicker] = useState(null);
+  const emptyMotion = useRef(new Animated.Value(0)).current;
 
   const groups = Object.keys(data);
   const hasData = useMemo(() => flatten(data).length > 0, [data]);
@@ -30,7 +31,13 @@ export default function FeedScreen({title, subtitle, data, noun, searchPlacehold
 
   const faculty = skillFaculties.find(item => item.code === subs.faculty);
   const facultyDepartments = faculty ? departments.filter(item => item.skill_faculty_id === faculty.id) : [];
-  const selectedDepartment = facultyDepartments.find(item => item.code === subs.department);
+  // A faculty without child departments is selectable by its own name in the
+  // department field, and its faculty-level posts appear under that option.
+  const departmentlessFacultyOption = faculty && facultyDepartments.length === 0
+    ? {id: faculty.id, code: faculty.code, name: faculty.name, skill_faculty_id: faculty.id}
+    : null;
+  const selectedDepartment = facultyDepartments.find(item => item.code === subs.department)
+    || (departmentlessFacultyOption && subs.department === faculty.code ? departmentlessFacultyOption : null);
   const facultyItems = faculty ? data['Skill Faculty']?.[faculty.code] || {} : {};
   const items = group === 'Skill Faculty'
     ? selectedDepartment
@@ -39,6 +46,16 @@ export default function FeedScreen({title, subtitle, data, noun, searchPlacehold
     : group === 'Clubs'
       ? data.Clubs?.[subs[group] || Object.keys(data.Clubs || {})[0]] || []
       : data.University?.All || [];
+  const itemCount = items.length;
+  useEffect(() => {
+    if (itemCount > 0 || results) return undefined;
+    const animation = Animated.loop(Animated.sequence([
+      Animated.timing(emptyMotion, {toValue: 1, duration: 1450, easing: Easing.inOut(Easing.sin), useNativeDriver: true}),
+      Animated.timing(emptyMotion, {toValue: 0, duration: 1450, easing: Easing.inOut(Easing.sin), useNativeDriver: true}),
+    ]));
+    animation.start();
+    return () => animation.stop();
+  }, [emptyMotion, itemCount, results]);
   const clubChips = clubs.map(club => ({key: club.name, label: club.name}));
   const scopeIcon = group === 'University' ? 'globe-outline' : group === 'Skill Faculty' ? 'school-outline' : 'people-outline';
   const summaryTitle = group === 'Skill Faculty' ? selectedDepartment?.name || faculty?.name || 'Skill Faculty' : group;
@@ -80,7 +97,7 @@ export default function FeedScreen({title, subtitle, data, noun, searchPlacehold
                   <View style={styles.selectorHeading}>
                     <View style={[styles.selectorIcon, !faculty && styles.selectorIconDisabled]}><Icon name="business-outline" size={16} color={faculty ? colors.primary : colors.mute} /></View>
                     <Text style={styles.selectorLabel}>DEPARTMENT</Text>
-                    <Text accessibilityLabel={`${facultyDepartments.length} departments under this Skill Faculty`} style={styles.selectorCount}>{faculty ? `${facultyDepartments.length} total` : '—'}</Text>
+                    <Text accessibilityLabel={`${facultyDepartments.length || (departmentlessFacultyOption ? 1 : 0)} department options under this Skill Faculty`} style={styles.selectorCount}>{faculty ? `${facultyDepartments.length || (departmentlessFacultyOption ? 1 : 0)} total` : '—'}</Text>
                   </View>
                   <View style={styles.selectorValueRow}>
                     <Text numberOfLines={2} style={[styles.selectorValue, (!selectedDepartment || !faculty) && styles.selectorPlaceholder]}>{selectedDepartment?.name || (faculty ? 'Select a department' : 'Choose a faculty first')}</Text>
@@ -105,11 +122,43 @@ export default function FeedScreen({title, subtitle, data, noun, searchPlacehold
             </View>}
           </View>
           {items.length ? items.map(renderItem) : (
-            <View style={styles.box}><Text style={styles.msg}>{group === 'Skill Faculty' && !faculty
-              ? 'Choose a Skill Faculty to see its departments.'
-              : group === 'Skill Faculty' && !selectedDepartment
-                ? facultyDepartments.length ? `Choose a department to see its ${noun}s.` : 'No departments are listed under this faculty.'
-                : `No ${noun}s here yet`}</Text></View>
+            <View style={styles.emptyWrap}>
+              <View style={styles.emptyPanel}>
+                <View style={styles.emptyArt}>
+                  <Animated.View style={[styles.emptyOrbit, styles.emptyOrbitOuter, {transform: [{translateY: emptyMotion.interpolate({inputRange: [0, 1], outputRange: [0, -5]})}, {rotate: emptyMotion.interpolate({inputRange: [0, 1], outputRange: ['-7deg', '7deg']})}]}]} />
+                  <Animated.View style={[styles.emptyOrbit, styles.emptyOrbitInner, {transform: [{translateY: emptyMotion.interpolate({inputRange: [0, 1], outputRange: [0, 4]})}, {rotate: emptyMotion.interpolate({inputRange: [0, 1], outputRange: ['8deg', '-8deg']})}]}]} />
+                  <View style={styles.emptyIconHalo}>
+                    <Icon name={noun === 'event' ? 'calendar-outline' : 'notifications-outline'} size={32} color={colors.primary} />
+                  </View>
+                  <Animated.View style={[styles.emptySparkle, {opacity: emptyMotion.interpolate({inputRange: [0, 0.5, 1], outputRange: [0.55, 1, 0.55]}), transform: [{scale: emptyMotion.interpolate({inputRange: [0, 1], outputRange: [0.85, 1.12]})}]}]}>
+                    <Icon name="sparkles-outline" size={17} color={colors.primary2} />
+                  </Animated.View>
+                  <View style={styles.emptyDot} />
+                </View>
+                <Text style={styles.emptyEyebrow}>{noun === 'event' ? 'CAMPUS EVENTS' : 'CAMPUS NOTICES'}</Text>
+                <Text style={styles.emptyTitle}>{group === 'Skill Faculty' && !faculty
+                  ? 'Pick your campus community'
+                  : group === 'Skill Faculty' && !selectedDepartment
+                    ? 'Choose a department to explore'
+                    : 'Your next ' + (noun === 'event' ? 'campus moment' : 'important update') + ' is on its way'}</Text>
+                <Text style={styles.emptyDescription}>{group === 'Skill Faculty' && !faculty
+                  ? 'Choose a Skill Faculty above to find events and updates for that community.'
+                  : group === 'Skill Faculty' && !selectedDepartment
+                    ? facultyDepartments.length ? 'Select a department to see its ' + noun + 's and updates.' : 'This Skill Faculty has no child departments. Choose its name above to see its posts.'
+                    : 'There are no ' + noun + 's to show in this space right now. Check back soon for something new.'}</Text>
+                {group === 'Skill Faculty' && (!faculty || !selectedDepartment) ? (
+                  <TouchableOpacity activeOpacity={0.8} onPress={() => setPicker(faculty ? 'department' : 'faculty')} style={styles.emptyAction}>
+                    <Text style={styles.emptyActionText}>{faculty ? 'Choose a department' : 'Choose a Skill Faculty'}</Text>
+                    <Icon name="arrow-forward" size={16} color="#fff" />
+                  </TouchableOpacity>
+                ) : (
+                  <TouchableOpacity activeOpacity={0.8} onPress={refresh} style={styles.emptyRefresh}>
+                    <Icon name="refresh-outline" size={15} color={colors.primary} />
+                    <Text style={styles.emptyRefreshText}>Check again</Text>
+                  </TouchableOpacity>
+                )}
+              </View>
+            </View>
           )}
         </>
       )}
@@ -117,13 +166,14 @@ export default function FeedScreen({title, subtitle, data, noun, searchPlacehold
       <BottomSheet visible={picker === 'faculty'} onClose={() => setPicker(null)}>
         <View style={styles.pickerHeader}>
           <Text style={styles.pickerTitle}>Choose a Skill Faculty</Text>
-          <Text style={styles.pickerSubtitle}>Departments will be shown for your selection.</Text>
+          <Text style={styles.pickerSubtitle}>{facultyDepartments.length ? 'Choose a department under this faculty.' : 'This faculty has no departments, so its own name is shown as the department option.'}</Text>
         </View>
         {skillFaculties.map(item => {
           const selected = faculty?.id === item.id;
           return (
             <TouchableOpacity key={item.id} activeOpacity={0.75} onPress={() => {
-              setSubs(prev => ({...prev, faculty: item.code, department: null}));
+              const hasDepartments = departments.some(department => department.skill_faculty_id === item.id);
+              setSubs(prev => ({...prev, faculty: item.code, department: hasDepartments ? null : item.code}));
               setPicker(null);
             }} style={[styles.pickerRow, selected && styles.pickerRowSelected]}>
               <View style={[styles.pickerCode, selected && styles.pickerCodeSelected]}><Text style={[styles.pickerCodeText, selected && styles.pickerCodeTextSelected]}>{item.code}</Text></View>
@@ -151,7 +201,16 @@ export default function FeedScreen({title, subtitle, data, noun, searchPlacehold
               {selected && <Icon name="checkmark-circle" size={19} color={colors.primary} />}
             </TouchableOpacity>
           );
-        }) : <Text style={styles.emptyFilters}>No departments are listed under this faculty.</Text>}
+        }) : departmentlessFacultyOption ? (
+          <TouchableOpacity activeOpacity={0.75} onPress={() => {
+            setSubs(prev => ({...prev, department: faculty.code}));
+            setPicker(null);
+          }} style={[styles.pickerRow, selectedDepartment && styles.pickerRowSelected]}>
+            <View style={[styles.departmentPickerIcon, selectedDepartment && styles.pickerCodeSelected]}><Icon name="school-outline" size={17} color={selectedDepartment ? colors.primary : colors.mute} /></View>
+            <Text numberOfLines={2} style={styles.pickerRowName}>{faculty.name}</Text>
+            {selectedDepartment && <Icon name="checkmark-circle" size={19} color={colors.primary} />}
+          </TouchableOpacity>
+        ) : <Text style={styles.emptyFilters}>Choose a Skill Faculty first.</Text>}
       </BottomSheet>
     </Screen>
   );
@@ -190,6 +249,22 @@ const styles = StyleSheet.create({
   scopeCopy: {flex: 1},
   scopeTitle: {fontSize: 11.5, fontWeight: '700', color: colors.ink},
   scopeCount: {fontSize: 10, fontWeight: '600', color: colors.mute},
+  emptyWrap: {paddingTop: 8, paddingBottom: 28},
+  emptyPanel: {alignItems: 'center', overflow: 'hidden', borderRadius: 24, borderWidth: 1, borderColor: '#fff', backgroundColor: '#fff', paddingHorizontal: 22, paddingTop: 24, paddingBottom: 26, shadowColor: '#3C3296', shadowOpacity: 0.08, shadowRadius: 18, shadowOffset: {width: 0, height: 8}, elevation: 3},
+  emptyArt: {width: 124, height: 112, alignItems: 'center', justifyContent: 'center', marginBottom: 12},
+  emptyOrbit: {position: 'absolute', borderRadius: 999, borderWidth: 1, borderColor: '#E4E2FF', backgroundColor: '#F8F7FF'},
+  emptyOrbitOuter: {width: 106, height: 106},
+  emptyOrbitInner: {width: 78, height: 78, borderStyle: 'dashed', backgroundColor: 'rgba(255,255,255,0.7)'},
+  emptyIconHalo: {width: 64, height: 64, alignItems: 'center', justifyContent: 'center', borderRadius: 22, borderWidth: 1, borderColor: '#fff', backgroundColor: colors.soft, shadowColor: colors.primary, shadowOpacity: 0.14, shadowRadius: 12, shadowOffset: {width: 0, height: 5}, elevation: 3},
+  emptySparkle: {position: 'absolute', top: 7, right: 11, width: 29, height: 29, alignItems: 'center', justifyContent: 'center', borderRadius: 10, backgroundColor: '#fff', shadowColor: colors.primary, shadowOpacity: 0.12, shadowRadius: 8, elevation: 2},
+  emptyDot: {position: 'absolute', bottom: 15, left: 13, width: 9, height: 9, borderRadius: 5, backgroundColor: colors.accent},
+  emptyEyebrow: {marginBottom: 8, color: colors.primary, fontSize: 9, fontWeight: '900', letterSpacing: 1.7},
+  emptyTitle: {maxWidth: 280, color: colors.ink, fontSize: 18, lineHeight: 25, fontWeight: '800', textAlign: 'center'},
+  emptyDescription: {maxWidth: 300, marginTop: 8, color: colors.mute, fontSize: 12, lineHeight: 19, fontWeight: '500', textAlign: 'center'},
+  emptyAction: {flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, marginTop: 17, paddingHorizontal: 16, paddingVertical: 11, borderRadius: 13, backgroundColor: colors.primary},
+  emptyActionText: {color: '#fff', fontSize: 11, fontWeight: '800'},
+  emptyRefresh: {flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, marginTop: 16, paddingHorizontal: 14, paddingVertical: 9, borderRadius: 12, backgroundColor: colors.soft},
+  emptyRefreshText: {color: colors.primary, fontSize: 11, fontWeight: '800'},
   box: {alignItems: 'center', paddingVertical: 36},
   msg: {textAlign: 'center', color: colors.mute, fontWeight: '600', lineHeight: 24},
   retry: {marginTop: 12, color: colors.primary, fontWeight: '800'},

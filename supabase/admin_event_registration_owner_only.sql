@@ -26,14 +26,19 @@ $$;
 revoke all on function public.get_event_registration_counts(uuid[]) from public, anon;
 grant execute on function public.get_event_registration_counts(uuid[]) to authenticated;
 
-create or replace function public.get_event_registrants(p_event_id uuid)
+drop function if exists public.get_event_registrants(uuid);
+create function public.get_event_registrants(p_event_id uuid)
 returns table (
   registration_id uuid,
   user_name text,
   email text,
   user_type text,
+  department_id uuid,
   department_name text,
   department_code text,
+  skill_faculty_id uuid,
+  skill_faculty_name text,
+  skill_faculty_code text,
   course text,
   batch text,
   semester integer,
@@ -64,8 +69,12 @@ begin
       registration.user_name,
       registration.email,
       registration.user_type::text,
+      registration.department_id,
       registration.department_name,
       registration.department_code,
+      registration.skill_faculty_id,
+      registration.skill_faculty_name,
+      registration.skill_faculty_code,
       registration.course,
       registration.batch,
       registration.semester,

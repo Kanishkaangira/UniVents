@@ -2,11 +2,12 @@ import React, {createContext, useCallback, useContext, useEffect, useMemo, useRe
 import {supabase} from '../Services/supabase';
 import * as api from '../Services/api';
 import {buildTree, mapPost} from '../Services/mappers';
+import * as pushNotifications from '../Services/pushNotifications';
 
 const AppContext = createContext(null);
 
 const profileIsComplete = row => Boolean(
-  row?.user_name?.trim() && row.user_type && (row.user_type === 'administration' || row.department_id) &&
+  row?.user_name?.trim() && row.user_type && (row.user_type === 'administration' || row.department_id || row.skill_faculty_id) &&
   (row.user_type === 'faculty' || row.user_type === 'administration' || (row.user_type === 'student' && row.enroll_no?.trim() && row.course?.trim() && row.batch?.trim() && row.semester)),
 );
 
@@ -48,6 +49,8 @@ export function AppProvider({children}) {
     });
     return () => data.subscription.unsubscribe();
   }, []);
+
+  useEffect(() => pushNotifications.listenForForegroundEventPushNotifications(), []);
 
   const load = useCallback(async ({silent = false} = {}) => {
     const requestId = ++loadRequest.current;
@@ -117,6 +120,41 @@ export function AppProvider({children}) {
     load();
   }, [sessionUserId, load]);
 
+  useEffect(() => {
+    const userType = profile?.user_type;
+    if (
+      !sessionUserId ||
+      profile?.id !== sessionUserId ||
+      !['student', 'faculty'].includes(userType)
+    ) {
+      return undefined;
+    }
+
+    let active = true;
+    let subscribed = false;
+
+    const subscribe = async () => {
+      try {
+        await pushNotifications.subscribeToEventPushNotifications(userType);
+        subscribed = true;
+        if (!active) {
+          await pushNotifications.unsubscribeFromEventPushNotifications(userType);
+        }
+      } catch (pushError) {
+        console.warn('Could not enable event push notifications:', pushError?.message);
+      }
+    };
+
+    subscribe();
+    return () => {
+      active = false;
+      if (subscribed) {
+        pushNotifications.unsubscribeFromEventPushNotifications(userType)
+          .catch(pushError => console.warn('Could not stop event push notifications:', pushError?.message));
+      }
+    };
+  }, [sessionUserId, profile?.id, profile?.user_type]);
+
   const value = useMemo(() => {
     const items = posts.map(mapPost);
     const events = items.filter(i => i.kind === 'event').sort((a, b) => String(a.dateISO).localeCompare(String(b.dateISO)));
@@ -128,6 +166,9 @@ export function AppProvider({children}) {
       eventTree: buildTree(events, skillFaculties, departments, clubs),
       noticeTree: buildTree(notices, skillFaculties, departments, clubs),
       myDepartment: departments.find(d => d.id === profile?.department_id)
+        || skillFaculties.find(faculty => faculty.id === profile?.department_id),
+      mySkillFaculty: skillFaculties.find(faculty => faculty.id === profile?.skill_faculty_id)
+        || skillFaculties.find(faculty => faculty.id === departments.find(d => d.id === profile?.department_id)?.skill_faculty_id)
         || skillFaculties.find(faculty => faculty.id === profile?.department_id),
       registered, saved, read,
       registerForEvent: async id => {

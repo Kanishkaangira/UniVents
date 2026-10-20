@@ -27,6 +27,7 @@ DerivedData
 build/
 .idea
 .gradle
+android/.gradle-user/
 local.properties
 *.iml
 *.hprof
@@ -34,6 +35,12 @@ local.properties
 *.keystore
 !debug.keystore
 .kotlin/
+
+# Private Firebase Admin SDK credentials (never commit service account keys).
+*firebase*service*account*.json
+service-account*.json
+*-firebase-adminsdk-*.json
+serviceAccountKey*.json
 
 # node.js
 #

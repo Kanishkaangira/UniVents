@@ -29,6 +29,7 @@ $$;
 
 -- Administration profiles may omit a department. Keep it required for all
 -- existing profiles and for newly created student/faculty profiles.
+alter table public.profiles add column if not exists skill_faculty_id uuid;
 alter table public.profiles alter column department_id drop not null;
 
 -- The existing student_fields_required constraint must only apply to students.
@@ -144,7 +145,7 @@ create policy profiles_insert_own_student_roll_email
   with check (
     id = (select auth.uid())
     and email = (select auth.jwt() ->> 'email')
-    and (user_type::text = 'administration' or department_id is not null)
+    and (user_type::text = 'administration' or department_id is not null or skill_faculty_id is not null)
     and (
       (
         user_type = 'student'
@@ -172,7 +173,7 @@ create policy profiles_insert_own_student_roll_email_guard
   with check (
     id = (select auth.uid())
     and email = (select auth.jwt() ->> 'email')
-    and (user_type::text = 'administration' or department_id is not null)
+    and (user_type::text = 'administration' or department_id is not null or skill_faculty_id is not null)
     and (
       (
         user_type = 'student'
@@ -203,7 +204,7 @@ create policy profiles_update_own_profile
     id = (select auth.uid())
     and email = (select auth.jwt() ->> 'email')
     and user_name is not null and btrim(user_name) <> ''
-    and (user_type::text = 'administration' or department_id is not null)
+    and (user_type::text = 'administration' or department_id is not null or skill_faculty_id is not null)
     and (
       (
         user_type = 'student'
@@ -235,7 +236,7 @@ create policy profiles_update_own_profile_guard
     id = (select auth.uid())
     and email = (select auth.jwt() ->> 'email')
     and user_name is not null and btrim(user_name) <> ''
-    and (user_type::text = 'administration' or department_id is not null)
+    and (user_type::text = 'administration' or department_id is not null or skill_faculty_id is not null)
     and (
       (
         user_type = 'student'

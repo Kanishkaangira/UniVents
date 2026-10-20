@@ -1,4 +1,6 @@
 -- Persist event registrations with a snapshot of the registering profile.
+-- Run after skill_faculty_department.sql. Profiles should store a child
+-- department ID when one is selected; legacy faculty IDs are also supported.
 -- Safe to run repeatedly. Enable pg_cron in Supabase, then rerun this file to
 -- install the scheduled cleanup job. Registration setup still succeeds without it.
 
@@ -9,15 +11,96 @@ create table if not exists public.event_registrations (
   user_type text not null check (user_type in ('student', 'faculty')),
   user_name text not null,
   email text not null,
-  department_id uuid references public.departments(id) on delete set null,
+  department_id uuid references public.department(id) on delete set null,
   department_name text,
   department_code text,
+  skill_faculty_id uuid references public.skill_faculty(id) on delete set null,
+  skill_faculty_name text,
+  skill_faculty_code text,
   course text,
   batch text,
   semester integer,
   created_at timestamptz not null default now(),
   unique (event_id, user_id)
 );
+
+-- Upgrade installations where department_id previously pointed to the old
+-- faculty table. Preserve that value as skill_faculty_id before changing the
+-- foreign key; child department registrations keep both IDs.
+alter table public.event_registrations
+  add column if not exists skill_faculty_id uuid,
+  add column if not exists skill_faculty_name text,
+  add column if not exists skill_faculty_code text;
+
+do $$
+declare department_fk_target oid;
+begin
+  select constraint_row.confrelid into department_fk_target
+  from pg_catalog.pg_constraint as constraint_row
+  where constraint_row.conrelid = 'public.event_registrations'::regclass
+    and constraint_row.conname = 'event_registrations_department_id_fkey';
+
+  if department_fk_target = 'public.skill_faculty'::regclass then
+    update public.event_registrations as registration
+    set skill_faculty_id = coalesce(registration.skill_faculty_id, registration.department_id),
+        skill_faculty_name = coalesce(registration.skill_faculty_name, faculty.name, registration.department_name),
+        skill_faculty_code = coalesce(registration.skill_faculty_code, faculty.code, registration.department_code),
+        department_id = null,
+        department_name = null,
+        department_code = null
+    from public.skill_faculty as faculty
+    where faculty.id = registration.department_id;
+
+    alter table public.event_registrations drop constraint event_registrations_department_id_fkey;
+    alter table public.event_registrations
+      add constraint event_registrations_department_id_fkey
+      foreign key (department_id) references public.department(id) on delete set null;
+  elsif department_fk_target is null then
+    update public.event_registrations as registration
+    set skill_faculty_id = coalesce(registration.skill_faculty_id, faculty.id),
+        skill_faculty_name = coalesce(registration.skill_faculty_name, faculty.name, registration.department_name),
+        skill_faculty_code = coalesce(registration.skill_faculty_code, faculty.code, registration.department_code),
+        department_id = null,
+        department_name = null,
+        department_code = null
+    from public.skill_faculty as faculty
+    where faculty.id = registration.department_id
+      and not exists (
+        select 1 from public.department as department
+        where department.id = registration.department_id
+      );
+
+    alter table public.event_registrations
+      add constraint event_registrations_department_id_fkey
+      foreign key (department_id) references public.department(id) on delete set null;
+  elsif department_fk_target <> 'public.department'::regclass then
+    raise exception 'event_registrations.department_id references an unexpected table; review before migrating.';
+  end if;
+end;
+$$;
+
+update public.event_registrations as registration
+set skill_faculty_id = department.skill_faculty_id,
+    skill_faculty_name = coalesce(registration.skill_faculty_name, faculty.name),
+    skill_faculty_code = coalesce(registration.skill_faculty_code, faculty.code)
+from public.department as department
+join public.skill_faculty as faculty on faculty.id = department.skill_faculty_id
+where registration.department_id = department.id
+  and registration.skill_faculty_id is distinct from department.skill_faculty_id;
+
+do $$
+begin
+  if not exists (
+    select 1 from pg_catalog.pg_constraint
+    where conrelid = 'public.event_registrations'::regclass
+      and conname = 'event_registrations_skill_faculty_id_fkey'
+  ) then
+    alter table public.event_registrations
+      add constraint event_registrations_skill_faculty_id_fkey
+      foreign key (skill_faculty_id) references public.skill_faculty(id) on delete set null;
+  end if;
+end;
+$$;
 
 create index if not exists event_registrations_user_id_idx
   on public.event_registrations(user_id);
@@ -48,6 +131,12 @@ declare
   profile_row public.profiles%rowtype;
   event_row public.events%rowtype;
   registration_id uuid;
+  profile_department_id uuid;
+  profile_department_name text;
+  profile_department_code text;
+  profile_skill_faculty_id uuid;
+  profile_skill_faculty_name text;
+  profile_skill_faculty_code text;
 begin
   if current_user_id is null then
     raise exception 'Sign in to register for this event.' using errcode = '42501';
@@ -64,8 +153,8 @@ begin
   if profile_row.user_type::text not in ('student', 'faculty')
     or nullif(btrim(profile_row.user_name), '') is null
     or nullif(btrim(profile_row.email), '') is null
-    or profile_row.department_id is null then
-    raise exception 'Complete your name, email, user type, and department in your profile before registering.' using errcode = '22023';
+    or (profile_row.department_id is null and profile_row.skill_faculty_id is null) then
+    raise exception 'Complete your name, email, user type, and Skill Faculty in your profile before registering.' using errcode = '22023';
   end if;
 
   if profile_row.user_type::text = 'student'
@@ -73,6 +162,27 @@ begin
       or nullif(btrim(profile_row.batch), '') is null
       or profile_row.semester is null) then
     raise exception 'Complete your course, batch, and semester in your profile before registering.' using errcode = '22023';
+  end if;
+
+  -- New profiles select a child department. Legacy profiles may still hold a
+  -- faculty ID in department_id; identify and record that faculty safely.
+  select department.id, department.name, department.code,
+         faculty.id, faculty.name, faculty.code
+    into profile_department_id, profile_department_name, profile_department_code,
+         profile_skill_faculty_id, profile_skill_faculty_name, profile_skill_faculty_code
+  from public.department as department
+  join public.skill_faculty as faculty on faculty.id = department.skill_faculty_id
+  where department.id = profile_row.department_id;
+
+  if profile_skill_faculty_id is null then
+    select faculty.id, faculty.name, faculty.code
+      into profile_skill_faculty_id, profile_skill_faculty_name, profile_skill_faculty_code
+    from public.skill_faculty as faculty
+    where faculty.id = coalesce(profile_row.skill_faculty_id, profile_row.department_id);
+  end if;
+
+  if profile_skill_faculty_id is null then
+    raise exception 'Your profile department is no longer available. Update your profile before registering.' using errcode = '23503';
   end if;
 
   select * into event_row
@@ -98,6 +208,7 @@ begin
   insert into public.event_registrations (
     event_id, user_id, user_type, user_name, email,
     department_id, department_name, department_code,
+    skill_faculty_id, skill_faculty_name, skill_faculty_code,
     course, batch, semester
   )
   select
@@ -106,9 +217,12 @@ begin
     profile_row.user_type::text,
     profile_row.user_name,
     profile_row.email,
-    profile_row.department_id,
-    (select department.name from public.departments as department where department.id = profile_row.department_id),
-    (select department.code from public.departments as department where department.id = profile_row.department_id),
+    profile_department_id,
+    profile_department_name,
+    profile_department_code,
+    profile_skill_faculty_id,
+    profile_skill_faculty_name,
+    profile_skill_faculty_code,
     profile_row.course,
     profile_row.batch,
     profile_row.semester
@@ -119,6 +233,9 @@ begin
         department_id = excluded.department_id,
         department_name = excluded.department_name,
         department_code = excluded.department_code,
+        skill_faculty_id = excluded.skill_faculty_id,
+        skill_faculty_name = excluded.skill_faculty_name,
+        skill_faculty_code = excluded.skill_faculty_code,
         course = excluded.course,
         batch = excluded.batch,
         semester = excluded.semester

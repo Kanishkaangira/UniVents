@@ -13,8 +13,8 @@ import {useApp} from '../Context/AppContext';
 
 const SEMESTER_OPTIONS = Array.from({length: 8}, (_, index) => String(index + 1));
 
-export default function Profile() {
-  const {session, profile, myDepartment, saveProfile, signOut, refreshing, refresh} = useApp();
+export default function Profile({navigation}) {
+  const {session, profile, myDepartment, mySkillFaculty, saveProfile, signOut, refreshing, refresh} = useApp();
   const [sheet, setSheet] = useState(null); // 'edit' | 'about' | 'logout' | null
   const [draft, setDraft] = useState({});
   const [saving, setSaving] = useState(false);
@@ -94,6 +94,7 @@ export default function Profile() {
 
         <View style={styles.menu}>
           <MenuItem icon="create-outline" label="Edit profile" onPress={openEdit} />
+          <MenuItem icon="notifications-outline" label="Notifications" onPress={() => navigation.navigate('Notifications')} />
           <MenuItem icon="information-circle-outline" label="About the app" onPress={() => setSheet('about')} />
           <MenuItem icon="log-out-outline" label="Log out" danger onPress={() => setSheet('logout')} />
         </View>
@@ -119,8 +120,8 @@ export default function Profile() {
         </EditSection>
         {isStudent && (
           <EditSection title="Academic details" icon="school-outline">
-            <Text style={styles.label}>Department</Text>
-            <ReadOnlyValue value={myDepartment ? `${myDepartment.name} (${myDepartment.code})` : profile.department_id} />
+            <Text style={styles.label}>Department or Skill Faculty</Text>
+            <ReadOnlyValue value={myDepartment?.name || mySkillFaculty?.name || 'Department not set'} />
             <View style={styles.detailRow}>
               <View style={styles.detailColumn}><Text style={styles.label}>Enrollment number</Text><ReadOnlyValue value={profile.enroll_no} /></View>
               <View style={styles.detailColumn}><Text style={styles.label}>Batch</Text><ReadOnlyValue value={profile.batch} /></View>

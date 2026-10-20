@@ -11,6 +11,7 @@ import {fmtDateTime} from '../Services/mappers';
 export default function EventDetailSheet({event, visible, onClose}) {
   const [fullImage, setFullImage] = useState(false);
   const [registering, setRegistering] = useState(false);
+  const [registrationSuccess, setRegistrationSuccess] = useState(false);
   const {registered, saved, skillFaculties, departments, clubs, registerForEvent, toggleSave} = useApp();
   if (!event) return null;
 
@@ -25,7 +26,7 @@ export default function EventDetailSheet({event, visible, onClose}) {
     : null;
   const club = event.clubId ? clubs.find(item => item.id === event.clubId) : null;
   const scopeLabel = event.organizerScope === 'department'
-    ? department?.code || department?.name
+    ? department?.name
     : event.organizerScope === 'club'
       ? club?.code || club?.name
       : null;
@@ -37,7 +38,7 @@ export default function EventDetailSheet({event, visible, onClose}) {
     setRegistering(true);
     try {
       const didRegister = await registerForEvent(event.id);
-      if (didRegister) Alert.alert('Registration complete', 'Your details have been saved for this event.');
+      if (didRegister) setRegistrationSuccess(true);
     } catch (error) {
       Alert.alert('Could not update registration', error.message || 'Please try again.');
     } finally {
@@ -132,6 +133,41 @@ export default function EventDetailSheet({event, visible, onClose}) {
         )}
       </BottomSheet>
 
+      <Modal
+        visible={registrationSuccess}
+        transparent
+        animationType="fade"
+        statusBarTranslucent
+        onRequestClose={() => setRegistrationSuccess(false)}
+      >
+        <View style={styles.successOverlay}>
+          <TouchableOpacity
+            accessibilityRole="button"
+            accessibilityLabel="Close registration confirmation"
+            activeOpacity={1}
+            onPress={() => setRegistrationSuccess(false)}
+            style={StyleSheet.absoluteFillObject}
+          />
+          <View accessibilityRole="alert" accessibilityLabel="Registration complete" style={styles.successCard}>
+            <LinearGradient colors={['#0F9B8E', '#087E80']} style={styles.successIconWrap}>
+              <Icon name="checkmark" size={34} color="#fff" />
+            </LinearGradient>
+            <Text style={styles.successEyebrow}>YOU’RE ALL SET</Text>
+            <Text style={styles.successTitle}>Registration complete</Text>
+            <Text style={styles.successMessage}>Your place is saved for {event.title}. You can find this event in your registered events.</Text>
+            <TouchableOpacity
+              accessibilityRole="button"
+              onPress={() => setRegistrationSuccess(false)}
+              style={styles.successButton}
+              activeOpacity={0.85}
+            >
+              <Text style={styles.successButtonText}>Great, thanks</Text>
+              <Icon name="arrow-forward" size={17} color="#fff" />
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+
       {event.imageUrl && (
         <Modal visible={fullImage} transparent={false} animationType="fade" statusBarTranslucent onRequestClose={() => setFullImage(false)}>
           <View style={styles.fullImageScreen}>
@@ -152,6 +188,14 @@ const styles = StyleSheet.create({
   fallbackEmoji: {fontSize: 62},
   expandHint: {position: 'absolute', right: 10, bottom: 10, width: 30, height: 30, borderRadius: 10, alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(20,22,50,0.55)'},
   fullImageScreen: {flex: 1, backgroundColor: '#080911', justifyContent: 'center', alignItems: 'center'},
+  successOverlay: {flex: 1, alignItems: 'center', justifyContent: 'center', padding: 24, backgroundColor: 'rgba(17,24,39,0.58)'},
+  successCard: {width: '100%', maxWidth: 360, alignItems: 'center', borderRadius: 26, backgroundColor: '#fff', paddingHorizontal: 25, paddingTop: 28, paddingBottom: 24, shadowColor: '#101828', shadowOpacity: 0.22, shadowRadius: 24, shadowOffset: {width: 0, height: 12}, elevation: 12},
+  successIconWrap: {width: 68, height: 68, borderRadius: 23, alignItems: 'center', justifyContent: 'center', marginBottom: 17, shadowColor: '#087E80', shadowOpacity: 0.22, shadowRadius: 10, shadowOffset: {width: 0, height: 5}, elevation: 5},
+  successEyebrow: {fontSize: 9, fontWeight: '900', letterSpacing: 1.4, color: '#087E80'},
+  successTitle: {marginTop: 7, fontSize: 21, lineHeight: 27, fontWeight: '900', color: colors.ink, textAlign: 'center'},
+  successMessage: {marginTop: 8, fontSize: 13, lineHeight: 20, color: colors.mute, textAlign: 'center'},
+  successButton: {minHeight: 48, width: '100%', flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, borderRadius: 15, backgroundColor: '#087E80', marginTop: 22},
+  successButtonText: {fontSize: 13, fontWeight: '800', color: '#fff'},
   fullImage: {width: '100%', height: '100%'},
   fullImageClose: {position: 'absolute', top: 44, right: 18, width: 42, height: 42, borderRadius: 14, alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(35,37,54,0.75)'},
   center: {alignItems: 'center', justifyContent: 'center'},

@@ -1,5 +1,5 @@
 import React, {useEffect, useMemo, useState} from 'react';
-import {Alert, Modal, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View} from 'react-native';
+import {Modal, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View} from 'react-native';
 import LinearGradient from 'react-native-linear-gradient';
 import Icon from 'react-native-vector-icons/Ionicons';
 import Screen from '../Components/Screen';
@@ -9,20 +9,17 @@ import {colors, gradients, shadow} from '../Constants/theme';
 import {useApp} from '../Context/AppContext';
 import {rollNumberFromEmail} from '../Services/emailRules';
 
-const EMPTY_FORM = {user_name: '', user_type: '', department_id: '', enroll_no: '', course: '', batch: '', semester: '', password: '', confirm: ''};
+const EMPTY_FORM = {user_name: '', user_type: '', skill_faculty_id: '', department_id: '', enroll_no: '', course: '', batch: '', semester: '', password: '', confirm: ''};
 const USER_TYPES = [
   {type: 'student', label: 'Student', icon: 'school-outline'},
   {type: 'faculty', label: 'Faculty', icon: 'person-outline'},
   {type: 'administration', label: 'Administration', icon: 'business-outline'},
 ];
 const SEMESTER_OPTIONS = Array.from({length: 8}, (_, index) => String(index + 1));
-const BATCH_OPTIONS = Array.from({length: 20}, (_, index) => {
-  const startYear = 2018 + index;
-  return `${startYear}–${startYear + 4}`;
-});
+const YEAR_OPTIONS = Array.from({length: 25}, (_, index) => String(2018 + index));
 
 export default function ProfileSetup() {
-  const {session, profile, departments, profileStatus, error, refresh, completeProfile, setPassword, signOut} = useApp();
+  const {session, profile, skillFaculties, departments, profileStatus, error, refresh, completeProfile, setPassword, signOut} = useApp();
   const roll = rollNumberFromEmail(session?.user?.email);
   const suggestedUserType = roll ? 'student' : 'faculty';
   // Require password setup while creating the profile, even if auth metadata
@@ -33,15 +30,32 @@ export default function ProfileSetup() {
   const isAdministration = form.user_type === 'administration';
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState('');
-  const [departmentOpen, setDepartmentOpen] = useState(false);
+  const [validationError, setValidationError] = useState('');
+  const [pickerMode, setPickerMode] = useState(null);
   const [departmentSearch, setDepartmentSearch] = useState('');
-  const update = (key, value) => setForm(prev => ({...prev, [key]: value}));
-  const selectedDepartment = departments.find(item => item.id === form.department_id);
+  const changeForm = updater => {
+    setForm(prev => typeof updater === 'function' ? updater(prev) : {...prev, ...updater});
+    setValidationError('');
+  };
+  const update = (key, value) => changeForm(prev => ({...prev, [key]: value}));
+  const selectedFaculty = skillFaculties.find(item => item.id === form.skill_faculty_id);
+  const facultyDepartments = selectedFaculty
+    ? [...new Map(departments.filter(item => item.skill_faculty_id === selectedFaculty.id)
+      .map(item => [String(item.name || '').trim().toLowerCase(), item])).values()]
+    : [];
+  const departmentlessFacultySelected = Boolean(selectedFaculty && facultyDepartments.length === 0 && !form.department_id);
+  const selectedDepartment = facultyDepartments.find(item => item.id === form.department_id)
+    || (departmentlessFacultySelected ? selectedFaculty : null);
+  const filteredFaculties = useMemo(() => {
+    const query = departmentSearch.trim().toLowerCase();
+    if (!query) return skillFaculties;
+    return skillFaculties.filter(item => `${item.name} ${item.code}`.toLowerCase().includes(query));
+  }, [skillFaculties, departmentSearch]);
   const filteredDepartments = useMemo(() => {
     const query = departmentSearch.trim().toLowerCase();
-    if (!query) return departments;
-    return departments.filter(item => `${item.name} ${item.code}`.toLowerCase().includes(query));
-  }, [departments, departmentSearch]);
+    if (!query) return facultyDepartments;
+    return facultyDepartments.filter(item => `${item.name} ${item.code}`.toLowerCase().includes(query));
+  }, [facultyDepartments, departmentSearch]);
 
   useEffect(() => {
     if (profileStatus !== 'missing') return;
@@ -49,41 +63,80 @@ export default function ProfileSetup() {
       ...EMPTY_FORM,
       user_type: profile?.user_type || suggestedUserType,
       user_name: profile?.user_name || '',
-      department_id: profile?.department_id || '',
+      skill_faculty_id: profile?.skill_faculty_id
+        || departments.find(item => item.id === profile?.department_id)?.skill_faculty_id
+        || skillFaculties.find(item => item.id === profile?.department_id)?.id
+        || '',
+      department_id: departments.some(item => item.id === profile?.department_id)
+        ? profile.department_id
+        : '',
       enroll_no: profile?.enroll_no || roll || '',
       course: profile?.course || '',
       batch: profile?.batch || '',
+      batchStart: profile?.batch?.match(/^(\d{4})\s*[-–]\s*(\d{4})$/)?.[1] || '',
+      batchEnd: profile?.batch?.match(/^(\d{4})\s*[-–]\s*(\d{4})$/)?.[2] || '',
       semester: profile?.semester ? String(profile.semester) : '',
     });
-  }, [profile, profileStatus, suggestedUserType]);
+  }, [profile, profileStatus, suggestedUserType, departments, skillFaculties]);
 
   const submit = async () => {
     const name = form.user_name.trim();
-    if (!name) return Alert.alert('Name required', 'Enter your full name to continue.');
-    if (!USER_TYPES.some(option => option.type === form.user_type)) return Alert.alert('Account type required', 'Choose Student, Faculty, or Administration to continue.');
-    if (!isAdministration && !form.department_id) return Alert.alert('Department required', 'Choose your department to continue.');
-    if (isStudent && (!form.enroll_no.trim() || !form.course.trim() || !form.batch || !form.semester)) {
-      return Alert.alert('Complete student details', 'Enrollment number, course, batch, and semester are all required.');
+    const missingDetails = [];
+    if (!name) missingDetails.push('name');
+    if (!USER_TYPES.some(option => option.type === form.user_type)) missingDetails.push('account type');
+    if (!isAdministration) {
+      const faculty = skillFaculties.find(item => item.id === form.skill_faculty_id);
+      const childDepartments = faculty ? departments.filter(item => item.skill_faculty_id === faculty.id) : [];
+      const selectedChildDepartment = childDepartments.find(item => item.id === form.department_id);
+      const departmentChoiceMissing = childDepartments.length > 0 && !selectedChildDepartment;
+      if (!faculty) missingDetails.push('Skill Faculty');
+      if (departmentChoiceMissing) missingDetails.push('Department');
     }
-    if (isStudent && !SEMESTER_OPTIONS.includes(form.semester)) {
-      return Alert.alert('Choose a semester', 'Select a semester from 1 to 8.');
+    if (isStudent) {
+      if (!form.enroll_no.trim()) missingDetails.push('enrollment number');
+      if (!form.course.trim()) missingDetails.push('course');
+      if (!form.batchStart) missingDetails.push('batch start year');
+      if (!form.batchEnd) missingDetails.push('batch end year');
+      if (!form.semester) missingDetails.push('semester');
     }
     if (needsPassword) {
-      if (form.password.length < 8) return Alert.alert('Password too short', 'Use at least 8 characters.');
-      if (form.password !== form.confirm) return Alert.alert('Passwords do not match', 'Type the same password twice.');
+      if (!form.password) missingDetails.push('password');
+      if (!form.confirm) missingDetails.push('password confirmation');
+    }
+    if (missingDetails.length) {
+      setValidationError('Please fill in all required details before continuing.');
+      return;
+    }
+    if (isStudent && Number(form.batchEnd) < Number(form.batchStart)) {
+      setValidationError('The batch end year must be the same as or later than the start year.');
+      return;
+    }
+    if (isStudent && !SEMESTER_OPTIONS.includes(form.semester)) {
+      setValidationError('Choose a semester from 1 to 8.');
+      return;
+    }
+    if (needsPassword && form.password.length < 8) {
+      setValidationError('Use a password with at least 8 characters.');
+      return;
+    }
+    if (needsPassword && form.password !== form.confirm) {
+      setValidationError('The passwords do not match. Please check them and try again.');
+      return;
     }
 
     setSaving(true);
+    setValidationError('');
     setSaveError('');
     try {
       const details = {
         user_name: name,
         user_type: form.user_type,
-        ...(isAdministration ? {department_id: null} : {department_id: form.department_id}),
+        department_id: isAdministration ? null : (facultyDepartments.find(item => item.id === form.department_id)?.id || null),
+        skill_faculty_id: isAdministration ? null : form.skill_faculty_id,
         ...(isStudent && {
           enroll_no: form.enroll_no.trim(),
           course: form.course.trim(),
-          batch: form.batch,
+          batch: `${form.batchStart}-${form.batchEnd}`,
           semester: Number(form.semester),
         }),
       };
@@ -96,13 +149,13 @@ export default function ProfileSetup() {
     }
   };
 
-  const openDepartments = () => {
-    if (!departments.length && error) {
+  const openPicker = mode => {
+    if ((!skillFaculties.length || (mode === 'department' && !facultyDepartments.length)) && error) {
       refresh();
       return;
     }
     setDepartmentSearch('');
-    setDepartmentOpen(true);
+    setPickerMode(mode);
   };
 
   if (profileStatus === 'error') {
@@ -149,7 +202,7 @@ export default function ProfileSetup() {
           {USER_TYPES.map(({type, label, icon}) => {
             const selected = form.user_type === type;
             return (
-              <TouchableOpacity key={type} accessibilityRole="radio" accessibilityState={{selected}} onPress={() => update('user_type', type)} style={[styles.userTypeOption, type === 'administration' && styles.userTypeOptionWide, selected && styles.userTypeOptionSelected]}>
+              <TouchableOpacity key={type} accessibilityRole="radio" accessibilityState={{selected}} onPress={() => changeForm(prev => ({...prev, user_type: type, ...(type === 'administration' ? {skill_faculty_id: '', department_id: ''} : {})}))} style={[styles.userTypeOption, type === 'administration' && styles.userTypeOptionWide, selected && styles.userTypeOptionSelected]}>
                 <Icon name={icon} size={18} color={selected ? colors.primary : colors.mute} />
                 <Text style={[styles.userTypeText, selected && styles.userTypeTextSelected]}>{label}</Text>
                 {selected && <Icon name="checkmark-circle" size={17} color={colors.primary} />}
@@ -159,31 +212,41 @@ export default function ProfileSetup() {
         </View>
 
         {!isAdministration && <>
-          <Text style={styles.label}>Department</Text>
-          <TouchableOpacity activeOpacity={0.8} onPress={openDepartments} style={styles.departmentTrigger}>
-            <View style={styles.departmentIcon}><Icon name="business-outline" size={18} color={colors.primary} /></View>
+          <Text style={styles.label}>Skill Faculty</Text>
+          <TouchableOpacity activeOpacity={0.8} onPress={() => openPicker('faculty')} style={styles.departmentTrigger}>
+            <View style={styles.departmentIcon}><Icon name="school-outline" size={18} color={colors.primary} /></View>
             <View style={styles.departmentSelected}>
-              <Text numberOfLines={1} style={[styles.departmentSelectedName, !selectedDepartment && styles.placeholder]}>
-                {selectedDepartment?.name || (departments.length ? 'Choose your department' : error ? 'Tap to retry loading' : 'Loading departments…')}
-              </Text>
-              {!!selectedDepartment && <Text style={styles.departmentSelectedCode}>{selectedDepartment.code}</Text>}
+              <Text numberOfLines={1} style={[styles.departmentSelectedName, !selectedFaculty && styles.placeholder]}>{selectedFaculty?.name || (skillFaculties.length ? 'Choose your Skill Faculty' : error ? 'Tap to retry loading' : 'Loading Skill Faculties…')}</Text>
+              {!!selectedFaculty && <Text style={styles.departmentSelectedCode}>{selectedFaculty.code}</Text>}
             </View>
-            <Icon name={departments.length ? 'chevron-down' : 'refresh-outline'} size={19} color={colors.mute} />
+            <Icon name={skillFaculties.length ? 'chevron-down' : 'refresh-outline'} size={19} color={colors.mute} />
+          </TouchableOpacity>
+          <Text style={[styles.label, {marginTop: 12}]}>Department (if applicable)</Text>
+          <TouchableOpacity activeOpacity={selectedFaculty ? 0.8 : 1} disabled={!selectedFaculty} onPress={() => openPicker('department')} style={[styles.departmentTrigger, !selectedFaculty && styles.departmentTriggerDisabled]}>
+            <View style={styles.departmentIcon}><Icon name="business-outline" size={18} color={selectedFaculty ? colors.primary : colors.mute} /></View>
+            <View style={styles.departmentSelected}>
+              <Text numberOfLines={1} style={[styles.departmentSelectedName, !selectedDepartment && styles.placeholder]}>{selectedDepartment?.name || (selectedFaculty ? 'Choose a department' : 'Choose a Skill Faculty first')}</Text>
+              {departmentlessFacultySelected && <Text style={styles.departmentSelectedCode}>No separate department</Text>}
+            </View>
+            {selectedFaculty && <Icon name="chevron-down" size={19} color={colors.mute} />}
           </TouchableOpacity>
         </>}
 
         {isStudent && <>
           <Field label="Enrollment number" value={form.enroll_no} onChangeText={v => update('enroll_no', v)} placeholder="Enter your enrollment number" />
           <Field label="Course" value={form.course} onChangeText={v => update('course', v)} placeholder="e.g. B.Tech Computer Science" />
-          <View style={styles.studentOptionsRow}>
-            <View style={styles.studentOptionColumn}>
-              <Text style={styles.label}>Batch</Text>
-              <BatchOptions value={form.batch} onChange={value => update('batch', value)} />
-            </View>
-            <View style={styles.studentOptionColumn}>
-              <Text style={styles.label}>Semester</Text>
-              <SemesterOptions value={form.semester} onChange={value => update('semester', value)} />
-            </View>
+          <View style={styles.batchField}>
+            <Text style={styles.label}>Batch period</Text>
+            <BatchOptions
+              startYear={form.batchStart}
+              endYear={form.batchEnd}
+              onChangeStart={value => changeForm(prev => ({...prev, batchStart: value, batchEnd: prev.batchEnd && Number(prev.batchEnd) < Number(value) ? '' : prev.batchEnd}))}
+              onChangeEnd={value => changeForm(prev => ({...prev, batchEnd: value}))}
+            />
+          </View>
+          <View style={styles.semesterField}>
+            <Text style={styles.label}>Semester</Text>
+            <SemesterOptions value={form.semester} onChange={value => update('semester', value)} />
           </View>
         </>}
       </View>
@@ -196,23 +259,24 @@ export default function ProfileSetup() {
         </View>
       )}
 
+      {!!validationError && <View accessibilityRole="alert" style={styles.validationErrorBox}><Icon name="alert-circle" size={18} color={colors.danger} /><Text style={styles.validationErrorText}>{validationError}</Text></View>}
       {!!saveError && <View style={styles.saveErrorBox}><Icon name="alert-circle-outline" size={18} color={colors.danger} /><Text style={styles.saveError}>{saveError}</Text></View>}
       <PrimaryButton label={saving ? 'Saving your profile…' : 'Save and continue'} onPress={saving ? () => {} : submit} style={styles.submitButton} />
       <TouchableOpacity onPress={signOut} style={styles.signOutLink}>
         <Text style={styles.linkText}>Sign out</Text>
       </TouchableOpacity>
 
-      <Modal visible={departmentOpen} transparent animationType="slide" statusBarTranslucent onRequestClose={() => setDepartmentOpen(false)}>
+      <Modal visible={Boolean(pickerMode)} transparent animationType="slide" statusBarTranslucent onRequestClose={() => setPickerMode(null)}>
         <View style={styles.modalRoot}>
-          <TouchableOpacity activeOpacity={1} style={styles.modalBackdrop} onPress={() => setDepartmentOpen(false)} />
+          <TouchableOpacity activeOpacity={1} style={styles.modalBackdrop} onPress={() => setPickerMode(null)} />
           <View style={styles.departmentSheet}>
             <View style={styles.sheetHandle} />
             <View style={styles.sheetHeader}>
               <View>
-                <Text style={styles.sheetTitle}>Choose department</Text>
-                <Text style={styles.sheetSubtitle}>{departments.length} departments available</Text>
+                <Text style={styles.sheetTitle}>{pickerMode === 'faculty' ? 'Choose Skill Faculty' : 'Choose Department'}</Text>
+                <Text style={styles.sheetSubtitle}>{pickerMode === 'faculty' ? `${skillFaculties.length} Skill Faculties available` : facultyDepartments.length === 0 ? 'No departments listed; choose the faculty name.' : `${facultyDepartments.length} departments in ${selectedFaculty?.name || 'this faculty'}`}</Text>
               </View>
-              <TouchableOpacity onPress={() => setDepartmentOpen(false)} style={styles.closeButton}>
+              <TouchableOpacity onPress={() => setPickerMode(null)} style={styles.closeButton}>
                 <Icon name="close" size={20} color={colors.ink} />
               </TouchableOpacity>
             </View>
@@ -222,7 +286,7 @@ export default function ProfileSetup() {
                 style={styles.searchInput}
                 value={departmentSearch}
                 onChangeText={setDepartmentSearch}
-                placeholder="Search departments"
+                placeholder={pickerMode === 'faculty' ? 'Search Skill Faculties' : 'Search departments'}
                 placeholderTextColor="#9298B1"
                 autoCapitalize="none"
                 autoCorrect={false}
@@ -230,29 +294,43 @@ export default function ProfileSetup() {
               {!!departmentSearch && <TouchableOpacity onPress={() => setDepartmentSearch('')}><Icon name="close-circle" size={18} color={colors.mute} /></TouchableOpacity>}
             </View>
             <ScrollView style={styles.departmentResults} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
-              {filteredDepartments.map(department => {
-                const active = form.department_id === department.id;
+              {pickerMode === 'faculty' ? filteredFaculties.map(faculty => {
+                const active = form.skill_faculty_id === faculty.id;
+                const hasDepartments = departments.some(department => department.skill_faculty_id === faculty.id);
                 return (
-                  <TouchableOpacity
-                    key={department.id}
-                    activeOpacity={0.75}
-                    onPress={() => {
-                      update('department_id', department.id);
-                      setDepartmentOpen(false);
-                    }}
-                    style={[styles.departmentOption, active && styles.departmentOptionActive]}>
-                    <View style={[styles.departmentOptionIcon, active && styles.departmentOptionIconActive]}>
-                      <Icon name="business-outline" size={17} color={active ? colors.primary : colors.mute} />
-                    </View>
-                    <View style={styles.departmentOptionCopy}>
-                      <Text style={styles.departmentOptionName}>{department.name}</Text>
-                      <Text style={styles.departmentOptionCode}>{department.code}</Text>
-                    </View>
+                  <TouchableOpacity key={faculty.id} activeOpacity={0.75} onPress={() => {
+                    changeForm(prev => ({...prev, skill_faculty_id: faculty.id, department_id: ''}));
+                    setPickerMode(null);
+                  }} style={[styles.departmentOption, active && styles.departmentOptionActive]}>
+                    <View style={[styles.departmentOptionIcon, active && styles.departmentOptionIconActive]}><Icon name="school-outline" size={17} color={active ? colors.primary : colors.mute} /></View>
+                    <View style={styles.departmentOptionCopy}><Text style={styles.departmentOptionName}>{faculty.name}</Text><Text style={styles.departmentOptionCode}>{faculty.code}{hasDepartments ? '' : ' · No departments'}</Text></View>
                     {active && <Icon name="checkmark-circle" size={20} color={colors.primary} />}
                   </TouchableOpacity>
                 );
-              })}
-              {!filteredDepartments.length && <Text style={styles.noResults}>No departments match “{departmentSearch}”.</Text>}
+              }) : facultyDepartments.length ? filteredDepartments.map(department => {
+                const active = form.department_id === department.id;
+                return (
+                  <TouchableOpacity key={department.id} activeOpacity={0.75} onPress={() => {
+                    changeForm(prev => ({...prev, department_id: department.id}));
+                    setPickerMode(null);
+                  }} style={[styles.departmentOption, active && styles.departmentOptionActive]}>
+                    <View style={[styles.departmentOptionIcon, active && styles.departmentOptionIconActive]}><Icon name="business-outline" size={17} color={active ? colors.primary : colors.mute} /></View>
+                    <View style={styles.departmentOptionCopy}><Text style={styles.departmentOptionName}>{department.name}</Text></View>
+                    {active && <Icon name="checkmark-circle" size={20} color={colors.primary} />}
+                  </TouchableOpacity>
+                );
+              }) : selectedFaculty ? (
+                <TouchableOpacity activeOpacity={0.75} onPress={() => {
+                  changeForm(prev => ({...prev, department_id: ''}));
+                  setPickerMode(null);
+                }} style={[styles.departmentOption, departmentlessFacultySelected && styles.departmentOptionActive]}>
+                  <View style={[styles.departmentOptionIcon, departmentlessFacultySelected && styles.departmentOptionIconActive]}><Icon name="school-outline" size={17} color={colors.primary} /></View>
+                  <View style={styles.departmentOptionCopy}><Text style={styles.departmentOptionName}>No separate department</Text><Text style={styles.departmentOptionCode}>{selectedFaculty.name}</Text></View>
+                  {departmentlessFacultySelected && <Icon name="checkmark-circle" size={20} color={colors.primary} />}
+                </TouchableOpacity>
+              ) : <Text style={styles.noResults}>Choose a Skill Faculty first.</Text>}
+              {pickerMode === 'faculty' && !filteredFaculties.length && <Text style={styles.noResults}>No Skill Faculties match “{departmentSearch}”.</Text>}
+              {pickerMode === 'department' && facultyDepartments.length > 0 && !filteredDepartments.length && <Text style={styles.noResults}>No departments match “{departmentSearch}”.</Text>}
             </ScrollView>
           </View>
         </View>
@@ -287,19 +365,35 @@ function ReadOnlyField({icon, label, value, verified = false}) {
 }
 
 function Field({label, value, onChangeText, placeholder, keyboardType = 'default', secureTextEntry = false, containerStyle}) {
+  const [passwordVisible, setPasswordVisible] = useState(false);
+  const input = (
+    <TextInput
+      style={secureTextEntry ? styles.passwordInput : styles.input}
+      value={value}
+      onChangeText={onChangeText}
+      placeholder={placeholder}
+      placeholderTextColor="#9298B1"
+      keyboardType={keyboardType}
+      secureTextEntry={secureTextEntry && !passwordVisible}
+      autoCapitalize={secureTextEntry || keyboardType === 'email-address' ? 'none' : 'words'}
+    />
+  );
   return (
     <View style={[styles.field, containerStyle]}>
       <Text style={styles.label}>{label}</Text>
-      <TextInput
-        style={styles.input}
-        value={value}
-        onChangeText={onChangeText}
-        placeholder={placeholder}
-        placeholderTextColor="#9298B1"
-        keyboardType={keyboardType}
-        secureTextEntry={secureTextEntry}
-        autoCapitalize={secureTextEntry || keyboardType === 'email-address' ? 'none' : 'words'}
-      />
+      {secureTextEntry ? (
+        <View style={styles.passwordInputWrap}>
+          {input}
+          <TouchableOpacity
+            accessibilityRole="button"
+            accessibilityLabel={passwordVisible ? 'Hide password' : 'Show password'}
+            onPress={() => setPasswordVisible(visible => !visible)}
+            style={styles.passwordVisibilityButton}
+            hitSlop={8}>
+            <Icon name={passwordVisible ? 'eye-off-outline' : 'eye-outline'} size={20} color={colors.mute} />
+          </TouchableOpacity>
+        </View>
+      ) : input}
     </View>
   );
 }
@@ -338,22 +432,55 @@ function SemesterOptions({value, onChange}) {
   );
 }
 
-function BatchOptions({value, onChange}) {
-  const [open, setOpen] = useState(false);
+function BatchOptions({startYear, endYear, onChangeStart, onChangeEnd}) {
+  const [picker, setPicker] = useState(null);
+  const options = picker === 'end' && startYear ? YEAR_OPTIONS.filter(year => Number(year) >= Number(startYear)) : YEAR_OPTIONS;
   return (
-    <View>
-      <TouchableOpacity accessibilityRole="button" accessibilityState={{expanded: open}} onPress={() => setOpen(current => !current)} style={styles.studentOptionTrigger}>
-        <Text numberOfLines={1} style={[styles.studentOptionTriggerText, !value && styles.placeholder]}>{value || 'Select batch'}</Text>
-        <Icon name={open ? 'chevron-up' : 'chevron-down'} size={17} color={colors.mute} />
-      </TouchableOpacity>
-      {open && <ScrollView style={styles.batchOptions} nestedScrollEnabled keyboardShouldPersistTaps="handled">
-        {BATCH_OPTIONS.map(option => (
-          <TouchableOpacity key={option} accessibilityRole="radio" accessibilityState={{selected: value === option}} onPress={() => { onChange(option); setOpen(false); }} style={[styles.batchOption, value === option && styles.semesterOptionSelected]}>
-            <Text style={[styles.semesterOptionText, value === option && styles.semesterOptionTextSelected]}>{option}</Text>
-          </TouchableOpacity>
-        ))}
-      </ScrollView>}
-    </View>
+    <>
+      <View style={styles.batchPeriodCard}>
+        <TouchableOpacity accessibilityRole="button" accessibilityLabel={`Choose batch start year${startYear ? `, ${startYear}` : ''}`} onPress={() => setPicker('start')} style={styles.batchYearTrigger}>
+          <Text style={styles.batchYearLabel}>START YEAR</Text>
+          <View style={styles.batchYearValueRow}>
+            <Text style={[styles.batchYearValue, !startYear && styles.batchYearPlaceholder]}>{startYear || 'Choose year'}</Text>
+            <Icon name="chevron-down" size={17} color={colors.primary} />
+          </View>
+        </TouchableOpacity>
+        <View style={styles.batchRangeDivider}>
+          <View style={styles.batchRangeLine} />
+          <Icon name="arrow-forward" size={15} color={colors.primary} />
+          <View style={styles.batchRangeLine} />
+        </View>
+        <TouchableOpacity accessibilityRole="button" accessibilityLabel={`Choose batch end year${endYear ? `, ${endYear}` : ''}`} disabled={!startYear} onPress={() => setPicker('end')} style={[styles.batchYearTrigger, !startYear && styles.batchYearTriggerDisabled]}>
+          <Text style={styles.batchYearLabel}>END YEAR</Text>
+          <View style={styles.batchYearValueRow}>
+            <Text style={[styles.batchYearValue, !endYear && styles.batchYearPlaceholder]}>{endYear || 'Choose year'}</Text>
+            <Icon name="chevron-down" size={17} color={startYear ? colors.primary : colors.mute} />
+          </View>
+        </TouchableOpacity>
+      </View>
+      <Modal visible={Boolean(picker)} transparent animationType="slide" statusBarTranslucent onRequestClose={() => setPicker(null)}>
+        <View style={styles.modalRoot}>
+          <TouchableOpacity activeOpacity={1} style={styles.modalBackdrop} onPress={() => setPicker(null)} />
+          <View style={styles.departmentSheet}>
+            <View style={styles.sheetHandle} />
+            <View style={styles.sheetHeader}>
+              <View><Text style={styles.sheetTitle}>Choose {picker} year</Text><Text style={styles.sheetSubtitle}>Select the {picker} of your batch</Text></View>
+              <TouchableOpacity onPress={() => setPicker(null)} style={styles.closeButton}><Icon name="close" size={20} color={colors.ink} /></TouchableOpacity>
+            </View>
+            <ScrollView style={styles.departmentResults} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
+              {options.map(year => {
+                const active = (picker === 'start' ? startYear : endYear) === year;
+                return <TouchableOpacity key={year} accessibilityRole="radio" accessibilityState={{selected: active}} onPress={() => { picker === 'start' ? onChangeStart(year) : onChangeEnd(year); setPicker(null); }} style={[styles.departmentOption, active && styles.departmentOptionActive]}>
+                  <View style={[styles.departmentOptionIcon, active && styles.departmentOptionIconActive]}><Icon name="calendar-outline" size={17} color={active ? colors.primary : colors.mute} /></View>
+                  <View style={styles.departmentOptionCopy}><Text style={styles.departmentOptionName}>{year}</Text></View>
+                  {active && <Icon name="checkmark-circle" size={20} color={colors.primary} />}
+                </TouchableOpacity>;
+              })}
+            </ScrollView>
+          </View>
+        </View>
+      </Modal>
+    </>
   );
 }
 
@@ -376,10 +503,14 @@ const styles = StyleSheet.create({
   field: {marginTop: 11},
   label: {fontSize: 11.5, fontWeight: '700', color: colors.mute, marginBottom: 6},
   input: {minHeight: 46, borderWidth: 1, borderColor: colors.line, backgroundColor: '#FAFAFE', borderRadius: 13, paddingHorizontal: 12, paddingVertical: 10, fontSize: 13, fontWeight: '600', color: colors.ink},
+  passwordInputWrap: {minHeight: 46, borderWidth: 1, borderColor: colors.line, backgroundColor: '#FAFAFE', borderRadius: 13, flexDirection: 'row', alignItems: 'center', paddingRight: 9},
+  passwordInput: {flex: 1, minHeight: 44, paddingHorizontal: 12, paddingVertical: 10, fontSize: 13, fontWeight: '600', color: colors.ink},
+  passwordVisibilityButton: {width: 36, height: 36, alignItems: 'center', justifyContent: 'center'},
   readOnlyBlock: {marginTop: 11},
   readOnlyField: {minHeight: 44, borderWidth: 1, borderColor: colors.line, backgroundColor: '#F7F8FD', borderRadius: 13, paddingHorizontal: 12, flexDirection: 'row', alignItems: 'center', gap: 9},
   readOnlyText: {flex: 1, color: colors.ink, fontSize: 12.5, fontWeight: '600'},
   departmentTrigger: {minHeight: 54, borderWidth: 1, borderColor: colors.line, backgroundColor: '#FAFAFE', borderRadius: 14, paddingHorizontal: 10, flexDirection: 'row', alignItems: 'center', gap: 10},
+  departmentTriggerDisabled: {backgroundColor: '#F4F5F9', borderColor: '#E8EAF1'},
   departmentIcon: {width: 34, height: 34, borderRadius: 11, backgroundColor: colors.soft, alignItems: 'center', justifyContent: 'center'},
   departmentSelected: {flex: 1},
   departmentSelectedName: {fontSize: 12.5, fontWeight: '700', color: colors.ink},
@@ -391,12 +522,19 @@ const styles = StyleSheet.create({
   userTypeOptionSelected: {borderColor: colors.primary, backgroundColor: colors.soft},
   userTypeText: {fontSize: 12, fontWeight: '700', color: colors.mute},
   userTypeTextSelected: {color: colors.primary},
-  studentOptionsRow: {flexDirection: 'row', gap: 10, marginTop: 11},
-  studentOptionColumn: {flex: 1, minWidth: 0},
+  batchField: {marginTop: 13},
+  semesterField: {marginTop: 13},
   studentOptionTrigger: {minHeight: 46, borderWidth: 1, borderColor: colors.line, backgroundColor: '#FAFAFE', borderRadius: 13, paddingHorizontal: 10, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 4},
   studentOptionTriggerText: {flex: 1, fontSize: 12, fontWeight: '600', color: colors.ink},
-  batchOptions: {maxHeight: 180, borderWidth: 1, borderColor: colors.line, borderRadius: 12, marginTop: 6, backgroundColor: '#fff'},
-  batchOption: {minHeight: 38, justifyContent: 'center', paddingHorizontal: 10, borderBottomWidth: 1, borderBottomColor: colors.line},
+  batchPeriodCard: {borderWidth: 1, borderColor: '#E4E6F2', borderRadius: 16, backgroundColor: '#F8F8FD', padding: 10},
+  batchYearTrigger: {minHeight: 57, borderWidth: 1, borderColor: '#E7E8F2', backgroundColor: '#fff', borderRadius: 12, paddingHorizontal: 12, paddingVertical: 8, justifyContent: 'center'},
+  batchYearTriggerDisabled: {backgroundColor: '#F3F4F8', borderColor: '#E7E8F2'},
+  batchYearLabel: {fontSize: 9, fontWeight: '800', color: colors.mute, letterSpacing: 0.9, marginBottom: 4},
+  batchYearValueRow: {flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between'},
+  batchYearValue: {fontSize: 15, fontWeight: '800', color: colors.ink},
+  batchYearPlaceholder: {fontSize: 13, fontWeight: '600', color: '#9298B1'},
+  batchRangeDivider: {height: 25, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 7},
+  batchRangeLine: {height: 1, width: 35, backgroundColor: '#DADCF0'},
   semesterTrigger: {minHeight: 46, borderWidth: 1, borderColor: colors.line, backgroundColor: '#FAFAFE', borderRadius: 13, paddingHorizontal: 10, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 4},
   semesterTriggerText: {flex: 1, fontSize: 13, fontWeight: '600', color: colors.ink},
   semesterOptions: {flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between', rowGap: 8, marginTop: 8},
@@ -407,6 +545,8 @@ const styles = StyleSheet.create({
   submitButton: {marginTop: 3},
   saveErrorBox: {flexDirection: 'row', alignItems: 'flex-start', gap: 8, padding: 12, borderRadius: 13, backgroundColor: '#FFF1EE', marginBottom: 10},
   saveError: {flex: 1, fontSize: 12, lineHeight: 18, color: colors.danger},
+  validationErrorBox: {flexDirection: 'row', alignItems: 'center', gap: 9, padding: 13, borderRadius: 14, backgroundColor: '#FFF1F0', borderWidth: 1, borderColor: '#FFD7D2', marginBottom: 10},
+  validationErrorText: {flex: 1, fontSize: 12.5, lineHeight: 18, fontWeight: '700', color: colors.danger},
   signOutLink: {alignItems: 'center', paddingVertical: 16},
   linkText: {fontSize: 12, fontWeight: '700', color: colors.primary},
   errorCard: {backgroundColor: '#fff', borderRadius: 22, padding: 20, alignItems: 'center', ...shadow},
