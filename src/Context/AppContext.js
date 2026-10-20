@@ -30,7 +30,8 @@ export function AppProvider({children}) {
   const [read, setRead] = useState({});
   const currentUserId = useRef(null);
   const loadRequest = useRef(0);
-  currentUserId.current = session?.user?.id || null;
+  const sessionUserId = session?.user?.id || null;
+  currentUserId.current = sessionUserId;
 
   useEffect(() => {
     supabase.auth.getSession().then(({data}) => {
@@ -50,7 +51,7 @@ export function AppProvider({children}) {
 
   const load = useCallback(async ({silent = false} = {}) => {
     const requestId = ++loadRequest.current;
-    if (!session) {
+    if (!sessionUserId) {
       setProfile(null);
       setProfileStatus('signedOut');
       setSkillFaculties([]);
@@ -63,13 +64,13 @@ export function AppProvider({children}) {
       return;
     }
 
-    const requestUserId = session.user.id;
+    const requestUserId = sessionUserId;
     const isCurrentRequest = () => currentUserId.current === requestUserId && loadRequest.current === requestId;
     if (!silent) setLoading(true);
     setError(null);
     let profileResolved = false;
     try {
-      const me = await api.fetchMyProfile(session.user.id);
+      const me = await api.fetchMyProfile(requestUserId);
       if (!isCurrentRequest()) return;
       setProfile(me);
       setProfileStatus(profileIsComplete(me) ? 'complete' : 'missing');
@@ -86,7 +87,7 @@ export function AppProvider({children}) {
       setClubs(cls);
       setPosts(rows);
       try {
-        const registrations = await api.fetchMyRegistrations(session.user.id);
+        const registrations = await api.fetchMyRegistrations(requestUserId);
         if (isCurrentRequest()) setRegistered(registrations);
       } catch {
         // Keep the feed available if the optional registrations migration has not run yet.
@@ -100,7 +101,7 @@ export function AppProvider({children}) {
     } finally {
       if (isCurrentRequest() && !silent) setLoading(false);
     }
-  }, [session]);
+  }, [sessionUserId]);
 
   const refresh = useCallback(async () => {
     setRefreshing(true);
@@ -112,9 +113,9 @@ export function AppProvider({children}) {
   }, [load]);
 
   useEffect(() => {
-    setProfileStatus(session ? 'checking' : 'signedOut');
+    setProfileStatus(sessionUserId ? 'checking' : 'signedOut');
     load();
-  }, [session, load]);
+  }, [sessionUserId, load]);
 
   const value = useMemo(() => {
     const items = posts.map(mapPost);

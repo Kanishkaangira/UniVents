@@ -62,7 +62,7 @@ export function mapPost(r) {
   const base = {
     id: r.id, kind: r.content_type, title: r.title, category: r.category,
     organizerScope: r.organizer_scope || (r.department_id ? 'department' : r.club_id ? 'club' : 'university'),
-    departmentId: r.department_id, clubId: r.club_id, visibility: r.visibility,
+    departmentId: r.department_id, skillFacultyId: r.skill_faculty_id, clubId: r.club_id, visibility: r.visibility,
     status: r.status, createdAt: r.created_at, imageUrl: imageUrlFor(r.image_url, r.content_type),
   };
   if (r.content_type === 'notice') {
@@ -111,11 +111,21 @@ export function buildTree(items, skillFaculties, departments, clubs) {
     Clubs: Object.fromEntries(clubs.map(c => [c.name, []])),
   };
   items.forEach(i => {
-    if (i.organizerScope === 'department') {
+    if (i.organizerScope === 'skill_faculty') {
+      const faculty = facultyById[i.skillFacultyId];
+      if (faculty && tree['Skill Faculty'][faculty.code]) {
+        tree['Skill Faculty'][faculty.code].__all_departments__.push({
+          ...i,
+          scopeLabel: faculty.code,
+          scopeName: faculty.name,
+          skillFacultyName: faculty.name,
+        });
+      }
+    } else if (i.organizerScope === 'department') {
       const department = departmentById[i.departmentId];
       const faculty = department
         ? facultyById[department.skill_faculty_id]
-        : facultyById[i.departmentId];
+        : facultyById[i.skillFacultyId] || facultyById[i.departmentId];
       if (faculty && tree['Skill Faculty'][faculty.code]) {
         const departmentKey = department?.code || '__all_departments__';
         if (tree['Skill Faculty'][faculty.code][departmentKey]) {

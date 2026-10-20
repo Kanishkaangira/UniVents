@@ -34,7 +34,7 @@ export default function FeedScreen({title, subtitle, data, noun, searchPlacehold
   const facultyItems = faculty ? data['Skill Faculty']?.[faculty.code] || {} : {};
   const items = group === 'Skill Faculty'
     ? selectedDepartment
-      ? facultyItems[selectedDepartment.code] || []
+      ? [...(facultyItems.__all_departments__ || []), ...(facultyItems[selectedDepartment.code] || [])]
       : []
     : group === 'Clubs'
       ? data.Clubs?.[subs[group] || Object.keys(data.Clubs || {})[0]] || []
@@ -65,20 +65,28 @@ export default function FeedScreen({title, subtitle, data, noun, searchPlacehold
             <SegmentTabs tabs={groups} value={group} onChange={setGroup} />
             {group === 'Skill Faculty' && skillFaculties.length > 0 && (
               <View style={styles.hierarchySelectors}>
-                <TouchableOpacity activeOpacity={0.78} onPress={() => setPicker('faculty')} style={[styles.selectorField, !faculty && styles.selectorFieldWide]}>
-                  <Text style={styles.selectorLabel}>SKILL FACULTY</Text>
+                <TouchableOpacity accessibilityRole="button" activeOpacity={0.78} onPress={() => setPicker('faculty')} style={styles.selectorField}>
+                  <View style={styles.selectorHeading}>
+                    <View style={styles.selectorIcon}><Icon name="school-outline" size={16} color={colors.primary} /></View>
+                    <Text style={styles.selectorLabel}>SKILL FACULTY</Text>
+                    <Text accessibilityLabel={`${skillFaculties.length} Skill Faculties`} style={styles.selectorCount}>{skillFaculties.length} total</Text>
+                  </View>
                   <View style={styles.selectorValueRow}>
-                    <Text numberOfLines={2} style={styles.selectorValue}>{faculty?.name || 'Choose a faculty'}</Text>
-                    <Icon name="chevron-down" size={16} color={colors.primary} />
+                    <Text numberOfLines={2} style={[styles.selectorValue, !faculty && styles.selectorPlaceholder]}>{faculty?.name || 'Select a Skill Faculty'}</Text>
+                    <Icon name="chevron-down" size={17} color={colors.primary} />
                   </View>
                 </TouchableOpacity>
-                {!!faculty && <TouchableOpacity activeOpacity={0.78} onPress={() => setPicker('department')} style={styles.selectorField}>
-                  <Text style={styles.selectorLabel}>DEPARTMENT</Text>
-                  <View style={styles.selectorValueRow}>
-                    <Text numberOfLines={2} style={[styles.selectorValue, !selectedDepartment && styles.selectorPlaceholder]}>{selectedDepartment?.name || 'Choose a department'}</Text>
-                    <Icon name="chevron-down" size={16} color={colors.primary} />
+                <TouchableOpacity accessibilityRole="button" accessibilityState={{disabled: !faculty}} activeOpacity={faculty ? 0.78 : 1} disabled={!faculty} onPress={() => setPicker('department')} style={[styles.selectorField, !faculty && styles.selectorFieldDisabled]}>
+                  <View style={styles.selectorHeading}>
+                    <View style={[styles.selectorIcon, !faculty && styles.selectorIconDisabled]}><Icon name="business-outline" size={16} color={faculty ? colors.primary : colors.mute} /></View>
+                    <Text style={styles.selectorLabel}>DEPARTMENT</Text>
+                    <Text accessibilityLabel={`${facultyDepartments.length} departments under this Skill Faculty`} style={styles.selectorCount}>{faculty ? `${facultyDepartments.length} total` : '—'}</Text>
                   </View>
-                </TouchableOpacity>}
+                  <View style={styles.selectorValueRow}>
+                    <Text numberOfLines={2} style={[styles.selectorValue, (!selectedDepartment || !faculty) && styles.selectorPlaceholder]}>{selectedDepartment?.name || (faculty ? 'Select a department' : 'Choose a faculty first')}</Text>
+                    {faculty && <Icon name="chevron-down" size={17} color={colors.primary} />}
+                  </View>
+                </TouchableOpacity>
               </View>
             )}
             {group === 'Clubs' && clubChips.length > 0 && (
@@ -155,11 +163,15 @@ const styles = StyleSheet.create({
   optionsSection: {marginTop: 2, marginBottom: 8},
   optionsLabel: {fontSize: 10, fontWeight: '700', color: colors.mute, marginBottom: 4},
   hierarchySelectors: {flexDirection: 'row', gap: 8, marginTop: 2},
-  selectorField: {flex: 1, minWidth: 0, minHeight: 64, justifyContent: 'center', borderWidth: 1, borderColor: colors.line, borderRadius: 13, backgroundColor: '#FAFAFE', paddingHorizontal: 10, paddingVertical: 8},
-  selectorFieldWide: {flex: 0, width: '100%'},
-  selectorLabel: {fontSize: 8.5, fontWeight: '800', letterSpacing: 0.6, color: colors.mute, marginBottom: 5},
-  selectorValueRow: {flexDirection: 'row', alignItems: 'center', gap: 4},
-  selectorValue: {flex: 1, minWidth: 0, fontSize: 10, lineHeight: 13, fontWeight: '700', color: colors.ink},
+  selectorField: {flex: 1, minWidth: 0, minHeight: 72, justifyContent: 'center', borderWidth: 1, borderColor: colors.line, borderRadius: 15, backgroundColor: '#FAFAFE', paddingHorizontal: 9, paddingVertical: 9},
+  selectorFieldDisabled: {backgroundColor: '#F5F5F8', borderColor: '#E8E8EF'},
+  selectorHeading: {flexDirection: 'row', alignItems: 'center', gap: 5, marginBottom: 7},
+  selectorIcon: {width: 22, height: 22, borderRadius: 7, backgroundColor: colors.soft, alignItems: 'center', justifyContent: 'center'},
+  selectorIconDisabled: {backgroundColor: '#EBEBF0'},
+  selectorLabel: {flex: 1, minWidth: 0, fontSize: 8, fontWeight: '800', letterSpacing: 0.35, color: colors.mute},
+  selectorCount: {fontSize: 8, fontWeight: '800', color: colors.primary, backgroundColor: colors.soft, overflow: 'hidden', borderRadius: 7, paddingHorizontal: 5, paddingVertical: 3},
+  selectorValueRow: {flexDirection: 'row', alignItems: 'center', gap: 4, paddingLeft: 27},
+  selectorValue: {flex: 1, minWidth: 0, fontSize: 10, lineHeight: 14, fontWeight: '700', color: colors.ink},
   selectorPlaceholder: {color: colors.primary},
   pickerHeader: {marginBottom: 14},
   pickerTitle: {fontSize: 19, fontWeight: '800', color: colors.ink},
