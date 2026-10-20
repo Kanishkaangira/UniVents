@@ -16,10 +16,12 @@ export function AppProvider({children}) {
   const [booting, setBooting] = useState(true);
   const [profile, setProfile] = useState(null);
   const [profileStatus, setProfileStatus] = useState('checking');
+  const [skillFaculties, setSkillFaculties] = useState([]);
   const [departments, setDepartments] = useState([]);
   const [clubs, setClubs] = useState([]);
   const [posts, setPosts] = useState([]);
   const [loading, setLoading] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState(null);
 
   // ---- local preferences + persisted registrations ----
@@ -27,6 +29,7 @@ export function AppProvider({children}) {
   const [saved, setSaved] = useState({});
   const [read, setRead] = useState({});
   const currentUserId = useRef(null);
+  const loadRequest = useRef(0);
   currentUserId.current = session?.user?.id || null;
 
   useEffect(() => {
@@ -35,6 +38,9 @@ export function AppProvider({children}) {
       setBooting(false);
     });
     const {data} = supabase.auth.onAuthStateChange((event, s) => {
+      // Keep recovery OTP verification inside the login screen so the user can
+      // choose a new password before the normal signed-in routes are mounted.
+      if (event === 'PASSWORD_RECOVERY') return;
       // Setting the password during profile setup must not reload the app state mid-form
       if (event === 'USER_UPDATED') return;
       setSession(s);
@@ -42,10 +48,12 @@ export function AppProvider({children}) {
     return () => data.subscription.unsubscribe();
   }, []);
 
-  const load = useCallback(async () => {
+  const load = useCallback(async ({silent = false} = {}) => {
+    const requestId = ++loadRequest.current;
     if (!session) {
       setProfile(null);
       setProfileStatus('signedOut');
+      setSkillFaculties([]);
       setDepartments([]);
       setClubs([]);
       setPosts([]);
@@ -56,53 +64,56 @@ export function AppProvider({children}) {
     }
 
     const requestUserId = session.user.id;
-    setLoading(true);
+    const isCurrentRequest = () => currentUserId.current === requestUserId && loadRequest.current === requestId;
+    if (!silent) setLoading(true);
     setError(null);
     let profileResolved = false;
     try {
       const me = await api.fetchMyProfile(session.user.id);
-      if (currentUserId.current !== requestUserId) return;
+      if (!isCurrentRequest()) return;
       setProfile(me);
       setProfileStatus(profileIsComplete(me) ? 'complete' : 'missing');
       profileResolved = true;
-      const [deps, cls, rows] = await Promise.all([
+      const [faculties, deps, cls, rows] = await Promise.all([
+        api.fetchSkillFaculties(),
         api.fetchDepartments(),
         api.fetchClubs(),
         api.fetchPosts(me?.user_type || 'student'),
       ]);
-      if (currentUserId.current !== requestUserId) return;
+      if (!isCurrentRequest()) return;
+      setSkillFaculties(faculties);
       setDepartments(deps);
       setClubs(cls);
       setPosts(rows);
       try {
-        setRegistered(await api.fetchMyRegistrations(session.user.id));
+        const registrations = await api.fetchMyRegistrations(session.user.id);
+        if (isCurrentRequest()) setRegistered(registrations);
       } catch {
         // Keep the feed available if the optional registrations migration has not run yet.
-        setRegistered({});
+        if (isCurrentRequest()) setRegistered({});
       }
     } catch (e) {
-      if (currentUserId.current === requestUserId) {
+      if (isCurrentRequest()) {
         setError(e.message);
         if (!profileResolved) setProfileStatus('error');
       }
     } finally {
-      if (currentUserId.current === requestUserId) setLoading(false);
+      if (isCurrentRequest() && !silent) setLoading(false);
     }
   }, [session]);
+
+  const refresh = useCallback(async () => {
+    setRefreshing(true);
+    try {
+      await load();
+    } finally {
+      setRefreshing(false);
+    }
+  }, [load]);
 
   useEffect(() => {
     setProfileStatus(session ? 'checking' : 'signedOut');
     load();
-  }, [session, load]);
-
-  // Live updates: reload whenever someone adds / edits an event or notice
-  useEffect(() => {
-    if (!session) return undefined;
-    const channel = supabase
-      .channel('events-feed')
-      .on('postgres_changes', {event: '*', schema: 'public', table: 'events'}, () => load())
-      .subscribe();
-    return () => { supabase.removeChannel(channel); };
   }, [session, load]);
 
   const value = useMemo(() => {
@@ -111,11 +122,12 @@ export function AppProvider({children}) {
     const notices = items.filter(i => i.kind === 'notice').sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt)));
     const toggle = setter => id => setter(prev => ({...prev, [id]: !prev[id]}));
     return {
-      session, booting, profile, profileStatus, departments, clubs, loading, error, refresh: load,
+      session, booting, profile, profileStatus, skillFaculties, departments, clubs, loading, refreshing, error, refresh,
       events, notices,
-      eventTree: buildTree(events, departments, clubs),
-      noticeTree: buildTree(notices, departments, clubs),
-      myDepartment: departments.find(d => d.id === profile?.department_id),
+      eventTree: buildTree(events, skillFaculties, departments, clubs),
+      noticeTree: buildTree(notices, skillFaculties, departments, clubs),
+      myDepartment: departments.find(d => d.id === profile?.department_id)
+        || skillFaculties.find(faculty => faculty.id === profile?.department_id),
       registered, saved, read,
       registerForEvent: async id => {
         if (!profile?.id) throw new Error('Sign in and complete your profile before registering.');
@@ -145,7 +157,7 @@ export function AppProvider({children}) {
         return created;
       },
     };
-  }, [session, booting, profile, profileStatus, departments, clubs, posts, loading, error, load, registered, saved, read]);
+  }, [session, booting, profile, profileStatus, skillFaculties, departments, clubs, posts, loading, refreshing, error, refresh, registered, saved, read]);
 
   return <AppContext.Provider value={value}>{children}</AppContext.Provider>;
 }

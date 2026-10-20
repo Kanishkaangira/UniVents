@@ -15,7 +15,7 @@ import {useApp} from '../Context/AppContext';
 const pad = n => String(n).padStart(2, '0');
 
 export default function Home({navigation}) {
-  const {profile, events, registered, saved, toggleSave, loading, refresh} = useApp();
+  const {profile, events, registered, saved, toggleSave, loading, refreshing, refresh} = useApp();
   const now = new Date();
   const [cursor, setCursor] = useState({year: now.getFullYear(), month: now.getMonth()});
   const [day, setDay] = useState(now.getDate());
@@ -51,7 +51,7 @@ export default function Home({navigation}) {
 
   return (
     <>
-      <Screen refreshing={loading} onRefresh={refresh} bubbles>
+      <Screen refreshing={refreshing} onRefresh={refresh} bubbles>
         <ScreenHeader brand />
 
         <Text style={styles.hi}>{greeting},</Text>

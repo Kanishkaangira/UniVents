@@ -11,8 +11,11 @@ const check = ({data, error}) => {
 };
 
 // Static tables (users cannot edit them)
+export const fetchSkillFaculties = () =>
+  supabase.from('skill_faculty').select('id, name, code').order('created_at').then(check);
+
 export const fetchDepartments = () =>
-  supabase.from('departments').select('id, name, code').order('created_at').then(check);
+  supabase.from('department').select('id, name, code, skill_faculty_id').order('created_at').then(check);
 
 export const fetchClubs = () =>
   supabase.from('clubs').select('id, name, code').order('created_at').then(check);
@@ -80,10 +83,22 @@ export const registerForEvent = eventId =>
 export const signInWithEmail = (email, password) =>
   supabase.auth.signInWithPassword({email, password});
 
+export const isEmailRegistered = email =>
+  supabase.rpc('email_is_registered', {p_email: email});
+
 export const requestEmailOnlyOtp = email =>
   supabase.auth.signInWithOtp({email, options: {shouldCreateUser: true}});
 
 export const verifyEmailOtp = (email, token) =>
   supabase.auth.verifyOtp({email, token, type: 'email'});
+
+export const requestPasswordResetOtp = email =>
+  supabase.auth.resetPasswordForEmail(email);
+
+export const verifyPasswordResetOtp = (email, token) =>
+  supabase.auth.verifyOtp({email, token, type: 'recovery'});
+
+export const updatePassword = password =>
+  supabase.auth.updateUser({password});
 
 export const signOut = () => supabase.auth.signOut();

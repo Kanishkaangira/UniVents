@@ -11,7 +11,7 @@ import {fmtDateTime} from '../Services/mappers';
 export default function EventDetailSheet({event, visible, onClose}) {
   const [fullImage, setFullImage] = useState(false);
   const [registering, setRegistering] = useState(false);
-  const {registered, saved, departments, clubs, registerForEvent, toggleSave} = useApp();
+  const {registered, saved, skillFaculties, departments, clubs, registerForEvent, toggleSave} = useApp();
   if (!event) return null;
 
   const closeDetails = () => {
@@ -20,7 +20,9 @@ export default function EventDetailSheet({event, visible, onClose}) {
   };
   const isReg = !!registered[event.id];
   const isSaved = !!saved[event.id];
-  const department = event.departmentId ? departments.find(item => item.id === event.departmentId) : null;
+  const department = event.departmentId
+    ? departments.find(item => item.id === event.departmentId) || skillFaculties.find(item => item.id === event.departmentId)
+    : null;
   const club = event.clubId ? clubs.find(item => item.id === event.clubId) : null;
   const scopeLabel = event.organizerScope === 'department'
     ? department?.code || department?.name

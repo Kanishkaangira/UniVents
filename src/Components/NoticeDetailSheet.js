@@ -12,12 +12,14 @@ export default function NoticeDetailSheet({notice, visible, onClose}) {
   const [fullImage, setFullImage] = useState(false);
   const [pdfVisible, setPdfVisible] = useState(false);
   const [pdfPages, setPdfPages] = useState(0);
-  const {departments, clubs} = useApp();
+  const {skillFaculties, departments, clubs} = useApp();
   if (!notice) return null;
 
   const isImageAttachment = notice.attachmentType === 'image' && !!notice.attachmentUrl;
   const posterUrl = isImageAttachment ? notice.attachmentUrl : notice.imageUrl;
-  const department = notice.departmentId ? departments.find(item => item.id === notice.departmentId) : null;
+  const department = notice.departmentId
+    ? departments.find(item => item.id === notice.departmentId) || skillFaculties.find(item => item.id === notice.departmentId)
+    : null;
   const club = notice.clubId ? clubs.find(item => item.id === notice.clubId) : null;
   const departmentShort = department?.code || department?.name.split(/\s+/).map(part => part[0]).join('').toUpperCase();
   const scopeValue = departmentShort || club?.name;

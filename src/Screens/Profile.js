@@ -14,7 +14,7 @@ import {useApp} from '../Context/AppContext';
 const SEMESTER_OPTIONS = Array.from({length: 8}, (_, index) => String(index + 1));
 
 export default function Profile() {
-  const {session, profile, myDepartment, saveProfile, signOut, loading, refresh} = useApp();
+  const {session, profile, myDepartment, saveProfile, signOut, refreshing, refresh} = useApp();
   const [sheet, setSheet] = useState(null); // 'edit' | 'about' | 'logout' | null
   const [draft, setDraft] = useState({});
   const [saving, setSaving] = useState(false);
@@ -27,7 +27,7 @@ export default function Profile() {
 
   if (!profile) {
     return (
-      <Screen refreshing={loading} onRefresh={refresh}>
+      <Screen refreshing={refreshing} onRefresh={refresh}>
         <ScreenHeader title="Profile" subtitle={session ? 'Your account' : 'Signed out'} />
         <Text style={styles.about}>
           {session
@@ -77,7 +77,7 @@ export default function Profile() {
 
   return (
     <>
-      <Screen refreshing={loading} onRefresh={refresh}>
+      <Screen refreshing={refreshing} onRefresh={refresh}>
         <ScreenHeader title="Profile" subtitle="Your account" />
 
         <LinearGradient colors={gradients.brand} start={{x: 0, y: 0}} end={{x: 1, y: 1}} style={styles.profileHeader}>

@@ -26,7 +26,7 @@ export default function Screen({children, refreshing, onRefresh, bubbles = true}
         showsVerticalScrollIndicator={false}
         keyboardShouldPersistTaps="handled"
         refreshControl={onRefresh ? <RefreshControl refreshing={!!refreshing} onRefresh={onRefresh} tintColor={colors.primary} /> : undefined}
-        contentContainerStyle={{paddingTop: insets.top + 12, paddingHorizontal: 18, paddingBottom: 130}}>
+        contentContainerStyle={{flexGrow: 1, paddingTop: insets.top + 12, paddingHorizontal: 18, paddingBottom: 130}}>
         {children}
       </ScrollView>
     </View>

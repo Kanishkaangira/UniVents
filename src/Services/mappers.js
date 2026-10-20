@@ -53,7 +53,9 @@ const imageUrlFor = (path, contentType) => {
   return supabase.storage.from('event-posters').getPublicUrl(pathWithFolder).data.publicUrl;
 };
 
-export const flatten = tree => Object.values(tree).flatMap(group => Object.values(group).flat());
+export const flatten = tree => Object.values(tree).flatMap(value =>
+  Array.isArray(value) ? value : flatten(value),
+);
 
 // One row of the `events` table -> the object the cards/sheets render
 export function mapPost(r) {
@@ -91,18 +93,40 @@ export function mapPost(r) {
 }
 
 // Groups posts by their explicit organizer_scope and uses the related table for option labels.
-export function buildTree(items, departments, clubs) {
-  const deptCode = Object.fromEntries(departments.map(d => [d.id, d.code]));
+export function buildTree(items, skillFaculties, departments, clubs) {
+  const departmentById = Object.fromEntries(departments.map(department => [department.id, department]));
+  const facultyById = Object.fromEntries(skillFaculties.map(faculty => [faculty.id, faculty]));
   const clubById = Object.fromEntries(clubs.map(c => [c.id, c]));
   const tree = {
     University: {All: []},
-    Departments: Object.fromEntries(departments.map(d => [d.code, []])),
+    'Skill Faculty': Object.fromEntries(skillFaculties.map(faculty => [
+      faculty.code,
+      Object.fromEntries([
+        ['__all_departments__', []],
+        ...departments
+          .filter(department => department.skill_faculty_id === faculty.id)
+          .map(department => [department.code, []]),
+      ]),
+    ])),
     Clubs: Object.fromEntries(clubs.map(c => [c.name, []])),
   };
   items.forEach(i => {
-    if (i.organizerScope === 'department' && deptCode[i.departmentId]) {
-      const department = departments.find(d => d.id === i.departmentId);
-      tree.Departments[deptCode[i.departmentId]].push({...i, scopeLabel: deptCode[i.departmentId], scopeName: department?.name});
+    if (i.organizerScope === 'department') {
+      const department = departmentById[i.departmentId];
+      const faculty = department
+        ? facultyById[department.skill_faculty_id]
+        : facultyById[i.departmentId];
+      if (faculty && tree['Skill Faculty'][faculty.code]) {
+        const departmentKey = department?.code || '__all_departments__';
+        if (tree['Skill Faculty'][faculty.code][departmentKey]) {
+          tree['Skill Faculty'][faculty.code][departmentKey].push({
+            ...i,
+            scopeLabel: department?.code || faculty.code,
+            scopeName: department?.name || faculty.name,
+            skillFacultyName: faculty.name,
+          });
+        }
+      }
     } else if (i.organizerScope === 'club' && clubById[i.clubId]) {
       const club = clubById[i.clubId];
       tree.Clubs[club.name].push({...i, scopeLabel: club.code || club.name, scopeName: club.name});

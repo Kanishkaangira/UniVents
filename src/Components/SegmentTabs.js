@@ -4,7 +4,7 @@ import Icon from 'react-native-vector-icons/Ionicons';
 import {colors, gradients} from '../Constants/theme';
 import LinearGradient from 'react-native-linear-gradient';
 
-const TAB_ICONS = {University: 'globe-outline', Departments: 'business-outline', Clubs: 'people-outline'};
+const TAB_ICONS = {University: 'globe-outline', 'Skill Faculty': 'school-outline', Clubs: 'people-outline'};
 
 export default function SegmentTabs({tabs, value, onChange}) {
   return (
