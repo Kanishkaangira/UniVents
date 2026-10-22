@@ -32,8 +32,33 @@ RLS-protected device token table and adds the push claim column. Then deploy the
 Edge Function from the linked mobile app project:
 
 ```powershell
+$serviceAccountPath = "$HOME\Downloads\<downloaded-service-account>.json"
+$serviceAccount = Get-Content -Raw $serviceAccountPath |
+  ConvertFrom-Json |
+  ConvertTo-Json -Compress
+$envFile = [System.IO.Path]::GetTempFileName()
+try {
+  [System.IO.File]::WriteAllText(
+    $envFile,
+    "FIREBASE_SERVICE_ACCOUNT=$serviceAccount",
+    [System.Text.UTF8Encoding]::new($false)
+  )
+  supabase secrets set --env-file $envFile
+  if ($LASTEXITCODE -ne 0) {
+    throw "Could not set the Firebase service-account secret in Supabase."
+  }
+} finally {
+  Remove-Item $envFile -Force -ErrorAction SilentlyContinue
+  Remove-Variable serviceAccount -ErrorAction SilentlyContinue
+}
+
 supabase functions deploy send-push --no-verify-jwt
 ```
+
+Replace the placeholder with the downloaded JSON file's path. Run this only from
+the linked Supabase project; it uploads the credential to Supabase Secrets and
+removes the temporary env file afterward. Never add the service-account JSON or
+the generated env file to the repository or mobile app.
 
 Configure a Database Webhook in Supabase:
 
