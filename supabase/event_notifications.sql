@@ -14,6 +14,7 @@ create table if not exists public.event_notifications (
   image_url text,
   organizer_name text,
   visibility text not null,
+  
   published_at timestamptz not null default now()
 );
 
