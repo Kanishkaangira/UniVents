@@ -7,27 +7,46 @@ import SearchBar from './SearchBar';
 import SegmentTabs from './SegmentTabs';
 import ChipRow from './ChipRow';
 import BottomSheet from './BottomSheet';
+import MiniCalendar from './MiniCalendar';
 import {flatten} from '../Services/mappers';
 import {colors} from '../Constants/theme';
 import {useApp} from '../Context/AppContext';
 
+const toDateKey = date => `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+const itemDateKey = item => {
+  if (item.dateISO) return item.dateISO;
+  if (!item.createdAt) return null;
+  const date = new Date(item.createdAt);
+  return Number.isNaN(date.getTime()) ? null : toDateKey(date);
+};
+
 // Shared layout and filtering for Events and Notices.
 export default function FeedScreen({title, subtitle, data, noun, searchPlaceholder, searchKeys, renderItem}) {
   const {skillFaculties, departments, clubs, loading, refreshing, error, refresh} = useApp();
-  const [group, setGroup] = useState('University');
+  const [group, setGroup] = useState('All');
   const [subs, setSubs] = useState({});
   const [query, setQuery] = useState('');
   const [picker, setPicker] = useState(null);
+  const [selectedDate, setSelectedDate] = useState(null);
+  const [dateCursor, setDateCursor] = useState(() => {
+    const today = new Date();
+    return {year: today.getFullYear(), month: today.getMonth()};
+  });
   const emptyMotion = useRef(new Animated.Value(0)).current;
 
-  const groups = Object.keys(data);
-  const hasData = useMemo(() => flatten(data).length > 0, [data]);
+  const groups = ['All', ...Object.keys(data).filter(name => name !== 'All')];
+  const allItems = useMemo(() => flatten(data), [data]);
+  const hasData = allItems.length > 0;
 
   const results = useMemo(() => {
     const q = query.trim().toLowerCase();
-    if (!q) return null;
-    return flatten(data).filter(item => searchKeys.some(key => String(item[key] ?? '').toLowerCase().includes(q)));
-  }, [query, data, searchKeys]);
+    if (!q && !selectedDate) return null;
+    return allItems.filter(item => {
+      const matchesQuery = !q || searchKeys.some(key => String(item[key] ?? '').toLowerCase().includes(q));
+      const matchesDate = !selectedDate || itemDateKey(item) === selectedDate;
+      return matchesQuery && matchesDate;
+    });
+  }, [query, allItems, searchKeys, selectedDate]);
 
   const faculty = skillFaculties.find(item => item.code === subs.faculty);
   const facultyDepartments = faculty ? departments.filter(item => item.skill_faculty_id === faculty.id) : [];
@@ -39,7 +58,9 @@ export default function FeedScreen({title, subtitle, data, noun, searchPlacehold
   const selectedDepartment = facultyDepartments.find(item => item.code === subs.department)
     || (departmentlessFacultyOption && subs.department === faculty.code ? departmentlessFacultyOption : null);
   const facultyItems = faculty ? data['Skill Faculty']?.[faculty.code] || {} : {};
-  const items = group === 'Skill Faculty'
+  const items = group === 'All'
+    ? flatten(data)
+    : group === 'Skill Faculty'
     ? selectedDepartment
       ? [...(facultyItems.__all_departments__ || []), ...(facultyItems[selectedDepartment.code] || [])]
       : []
@@ -57,13 +78,36 @@ export default function FeedScreen({title, subtitle, data, noun, searchPlacehold
     return () => animation.stop();
   }, [emptyMotion, itemCount, results]);
   const clubChips = clubs.map(club => ({key: club.name, label: club.name}));
-  const scopeIcon = group === 'University' ? 'globe-outline' : group === 'Skill Faculty' ? 'school-outline' : 'people-outline';
+  const scopeIcon = group === 'All' ? 'apps-outline' : group === 'University' ? 'globe-outline' : group === 'Skill Faculty' ? 'school-outline' : 'people-outline';
   const summaryTitle = group === 'Skill Faculty' ? selectedDepartment?.name || faculty?.name || 'Skill Faculty' : group;
+  const datePrefix = `${dateCursor.year}-${String(dateCursor.month + 1).padStart(2, '0')}-`;
+  const dateMarked = Object.fromEntries(allItems
+    .map(itemDateKey)
+    .filter(date => date?.startsWith(datePrefix))
+    .map(date => [Number(date.slice(8, 10)), true]));
+  const selectedDateLabel = selectedDate
+    ? new Date(`${selectedDate}T00:00:00`).toLocaleDateString(undefined, {month: 'short', day: 'numeric', year: 'numeric'})
+    : '';
+  const openDatePicker = () => {
+    const date = selectedDate ? new Date(`${selectedDate}T00:00:00`) : new Date();
+    setDateCursor({year: date.getFullYear(), month: date.getMonth()});
+    setPicker('date');
+  };
+  const moveDateMonth = delta => {
+    const next = new Date(dateCursor.year, dateCursor.month + delta, 1);
+    setDateCursor({year: next.getFullYear(), month: next.getMonth()});
+  };
 
   return (
     <Screen refreshing={refreshing} onRefresh={refresh}>
-      <ScreenHeader title={title} subtitle={subtitle} />
-      <SearchBar value={query} onChangeText={setQuery} placeholder={searchPlaceholder} />
+      <ScreenHeader title={title} subtitle={subtitle} feed />
+      <SearchBar value={query} onChangeText={setQuery} placeholder={searchPlaceholder} onDatePress={openDatePicker} dateLabel={selectedDateLabel} />
+      {selectedDateLabel ? (
+        <TouchableOpacity accessibilityRole="button" accessibilityLabel={`Clear date filter ${selectedDateLabel}`} activeOpacity={0.75} onPress={() => setSelectedDate(null)} style={styles.selectedDateChip}>
+          <Text style={styles.selectedDateText}>DATE · {selectedDateLabel}</Text>
+          <Icon name="close-circle" size={15} color={colors.primary} />
+        </TouchableOpacity>
+      ) : null}
 
       {error ? (
         <View style={styles.box}>
@@ -74,7 +118,7 @@ export default function FeedScreen({title, subtitle, data, noun, searchPlacehold
         <ActivityIndicator color={colors.primary} style={styles.loader} />
       ) : results ? (
         results.length ? results.map(renderItem) : (
-          <View style={styles.box}><Text style={styles.msg}>No results for “{query}”</Text></View>
+          <View style={styles.box}><Text style={styles.msg}>{query.trim() ? `No results for “${query}”` : `No ${noun}s found for ${selectedDateLabel}.`}</Text></View>
         )
       ) : (
         <>
@@ -212,6 +256,34 @@ export default function FeedScreen({title, subtitle, data, noun, searchPlacehold
           </TouchableOpacity>
         ) : <Text style={styles.emptyFilters}>Choose a Skill Faculty first.</Text>}
       </BottomSheet>
+
+      <BottomSheet visible={picker === 'date'} onClose={() => setPicker(null)}>
+        <View style={styles.pickerHeader}>
+          <Text style={styles.pickerTitle}>Choose a date</Text>
+          <Text style={styles.pickerSubtitle}>Show {noun}s for a specific day.</Text>
+        </View>
+        <MiniCalendar
+          year={dateCursor.year}
+          month={dateCursor.month}
+          marked={dateMarked}
+          selected={selectedDate && selectedDate.startsWith(datePrefix) ? Number(selectedDate.slice(8, 10)) : null}
+          today={dateCursor.year === new Date().getFullYear() && dateCursor.month === new Date().getMonth() ? new Date().getDate() : null}
+          onSelect={day => {
+            setSelectedDate(`${datePrefix}${String(day).padStart(2, '0')}`);
+            setPicker(null);
+          }}
+          onPrev={() => moveDateMonth(-1)}
+          onNext={() => moveDateMonth(1)}
+        />
+        {selectedDate ? (
+          <TouchableOpacity accessibilityRole="button" activeOpacity={0.8} onPress={() => {
+            setSelectedDate(null);
+            setPicker(null);
+          }} style={styles.clearDateButton}>
+            <Text style={styles.clearDateText}>Clear date filter</Text>
+          </TouchableOpacity>
+        ) : null}
+      </BottomSheet>
     </Screen>
   );
 }
@@ -233,6 +305,10 @@ const styles = StyleSheet.create({
   selectorValue: {flex: 1, minWidth: 0, fontSize: 10, lineHeight: 14, fontWeight: '700', color: colors.ink},
   selectorPlaceholder: {color: colors.primary},
   pickerHeader: {marginBottom: 14},
+  selectedDateChip: {alignSelf: 'flex-start', flexDirection: 'row', alignItems: 'center', gap: 7, marginTop: -7, marginBottom: 12, paddingHorizontal: 10, paddingVertical: 6, borderRadius: 10, backgroundColor: '#EFEDFF'},
+  selectedDateText: {fontSize: 9, fontWeight: '900', letterSpacing: 0.35, color: colors.primary},
+  clearDateButton: {alignSelf: 'center', marginTop: 3, paddingHorizontal: 14, paddingVertical: 9, borderRadius: 12, backgroundColor: colors.soft},
+  clearDateText: {fontSize: 11, fontWeight: '800', color: colors.primary},
   pickerTitle: {fontSize: 19, fontWeight: '800', color: colors.ink},
   pickerSubtitle: {fontSize: 12, lineHeight: 18, color: colors.mute, marginTop: 4},
   pickerRow: {minHeight: 57, flexDirection: 'row', alignItems: 'center', gap: 11, borderWidth: 1, borderColor: colors.line, borderRadius: 14, paddingHorizontal: 10, paddingVertical: 8, marginBottom: 8},

@@ -1,36 +1,35 @@
 # Event push notifications
 
 The `event_notifications` table is maintained by the approved-event trigger in
-`event_notifications.sql`. Create a Supabase Database Webhook that sends each
-new row to the `send-push` Edge Function. The function sends the row's `title`
-and `message` through Firebase Cloud Messaging (FCM) HTTP v1.
+`event_notifications.sql`. A Supabase Database Webhook sends each new row to the
+`send-push` Edge Function. The function sends the row's `title` and `message`
+through Firebase Cloud Messaging (FCM) HTTP v1 to registered device tokens.
 
-The mobile app subscribes permitted users to the `all` topic and to their
-`student` or `faculty` topic. The function routes `visibility = all` to `all`
-and role-specific visibility to that matching role topic. Android displays the
-UniVents status icon, event poster when available, high-priority channel, and
-the device's default notification sound. The channel is created when the app
-starts. It uses the versioned `univents_event_updates_v2` channel so Android
-does not keep an older channel's disabled sound or low importance; rebuild and
-reinstall the Android app after changing native resources. While the app is
-open, the mobile app loads the push's notification row from
-`event_notifications` before displaying its local banner.
+When a student or faculty member signs in, the app requests notification
+permission, saves its FCM token in `device_tokens`, and updates `last_seen` when
+the token refreshes. Signing out attempts to remove that device's token. The
+Edge Function uses the event's `visibility` to find eligible profiles, then
+sends the FCM notification to each registered device. Firebase service-account
+credentials remain in Supabase secrets and are never stored in the mobile app.
+
+Android displays the UniVents status icon, event poster when available,
+high-priority channel, and the device's default notification sound. The channel
+is created when the app registers for notifications and is also configured as
+the native FCM default. While the app is open, the mobile app loads the push's
+notification row from `event_notifications` before displaying its local banner.
 
 The function accepts both the admin app's `{event_id}` request (validated
 against the signed-in admin and event scope) and a Supabase Database Webhook
 `INSERT` payload (validated against the service-role key). Both paths claim the
 same notification row before sending, preventing duplicate pushes if both are
-enabled. Deploy either repository's updated `send-push` function; both accept
-the two request formats.
+enabled. Deploy this updated `send-push` function from the mobile repository;
+it accepts both request formats.
 
 ## Configure and deploy
 
-The Firebase service account JSON stays in Supabase secrets; do not add it to
-the repository or send it to Codex. Since `FIREBASE_SERVICE_ACCOUNT` is already
-set in Supabase, there is no need to set it again. First run
-`event_notification_push_delivery.sql` from the admin repository in the
-Supabase SQL Editor to add the one-time push claim column. Then, from the
-linked mobile app project, run:
+Run `push_notifications_setup.sql` in the Supabase SQL Editor. This creates the
+RLS-protected device token table and adds the push claim column. Then deploy the
+Edge Function from the linked mobile app project:
 
 ```powershell
 supabase functions deploy send-push --no-verify-jwt
@@ -49,17 +48,22 @@ Configure a Database Webhook in Supabase:
 JWT verification is disabled at the Edge Function gateway so it can accept
 both request types. The handler validates admin access tokens for direct
 admin-app requests and the Supabase service-key bearer header for database
-webhooks. The Firebase service-account secret is only used to send to FCM.
+webhooks. Keep `FIREBASE_SERVICE_ACCOUNT` only in Supabase secrets. Never add
+it to the repository or mobile app.
 
-After changing native Firebase settings or Android permissions, rebuild and
-install the app:
+After applying the SQL and deploying the function, rebuild and install the app
+so the device can register its FCM token:
 
 ```powershell
 npm install
 npx react-native run-android
 ```
 
-Test by approving an event with visibility `all`, `student`, or `faculty`.
-Check Supabase Edge Function logs and the Database Webhook delivery logs if it
-does not arrive. Push delivery requires the Firebase Cloud Messaging API to be
-enabled for the service account's Firebase project.
+Test on a physical device by signing in, granting notification permission, and
+then approving an event with visibility `all`, `student`, or `faculty`.
+Notifications are shown by the operating system while the app is backgrounded
+or closed, and as a local banner while the app is open. Check `device_tokens`
+for the signed-in user's FCM token and check Supabase Edge Function logs and
+Database Webhook delivery logs if a notification does not arrive. Push delivery
+requires Firebase Cloud Messaging to be enabled for the service account's
+Firebase project. iOS also requires the app's Firebase/APNs configuration.

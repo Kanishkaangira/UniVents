@@ -7,6 +7,7 @@ import AIChat from '../Screens/AIChat';
 import SplashScreen from '../Components/SplashScreen';
 import Welcome from '../Screens/Welcome';
 import Notifications from '../Screens/Notifications';
+import EventCollection from '../Screens/EventCollection';
 import {useApp} from '../Context/AppContext';
 
 const Stack = createNativeStackNavigator();
@@ -32,7 +33,19 @@ export default function StackNavigation() {
       ) : (
         <Stack.Group>
           <Stack.Screen name="Welcome" component={Welcome} options={{animation: 'fade'}} />
-          <Stack.Screen name="Main" component={HomeBottomTabs} options={{animation: 'none'}} />
+          <Stack.Screen
+            name="Main"
+            component={HomeBottomTabs}
+            options={{
+              animation: 'fade_from_bottom',
+              animationTypeForReplace: 'push',
+            }}
+          />
+          <Stack.Screen
+            name="EventCollection"
+            component={EventCollection}
+            options={{animation: 'slide_from_right'}}
+          />
           <Stack.Screen name="Notifications" component={Notifications} options={{animation: 'slide_from_right'}} />
           <Stack.Screen name="AIChat" component={AIChat} options={{animation: 'slide_from_right'}} />
         </Stack.Group>

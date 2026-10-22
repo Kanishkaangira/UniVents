@@ -131,27 +131,25 @@ export function AppProvider({children}) {
     }
 
     let active = true;
-    let subscribed = false;
+    let stopTokenRefresh = () => {};
 
-    const subscribe = async () => {
+    const register = async () => {
       try {
-        await pushNotifications.subscribeToEventPushNotifications(userType);
-        subscribed = true;
-        if (!active) {
-          await pushNotifications.unsubscribeFromEventPushNotifications(userType);
-        }
+        const stopListening = await pushNotifications.registerForEventPushNotifications(
+          sessionUserId,
+          userType,
+        );
+        if (active) stopTokenRefresh = stopListening;
+        else stopListening();
       } catch (pushError) {
         console.warn('Could not enable event push notifications:', pushError?.message);
       }
     };
 
-    subscribe();
+    register();
     return () => {
       active = false;
-      if (subscribed) {
-        pushNotifications.unsubscribeFromEventPushNotifications(userType)
-          .catch(pushError => console.warn('Could not stop event push notifications:', pushError?.message));
-      }
+      stopTokenRefresh();
     };
   }, [sessionUserId, profile?.id, profile?.user_type]);
 
@@ -190,7 +188,14 @@ export function AppProvider({children}) {
         // retrying after a failed profile save sends the same password again: that is fine
         if (e && !/different from the old password/i.test(e.message)) throw new Error(e.message);
       },
-      signOut: () => api.signOut(),
+      signOut: async () => {
+        try {
+          await pushNotifications.removeRegisteredDeviceToken(sessionUserId);
+        } catch (pushError) {
+          console.warn('Could not remove the push notification device token:', pushError?.message);
+        }
+        return api.signOut();
+      },
       saveProfile: async fields => setProfile(await api.updateMyProfile(fields)),
       completeProfile: async fields => {
         const created = await api.createMyProfile(fields);
@@ -199,7 +204,7 @@ export function AppProvider({children}) {
         return created;
       },
     };
-  }, [session, booting, profile, profileStatus, skillFaculties, departments, clubs, posts, loading, refreshing, error, refresh, registered, saved, read]);
+  }, [session, sessionUserId, booting, profile, profileStatus, skillFaculties, departments, clubs, posts, loading, refreshing, error, refresh, registered, saved, read]);
 
   return <AppContext.Provider value={value}>{children}</AppContext.Provider>;
 }

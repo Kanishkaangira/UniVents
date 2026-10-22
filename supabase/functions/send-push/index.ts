@@ -222,12 +222,27 @@ Deno.serve(async request => {
     return json({error: 'Notification row is missing required fields.'}, 400);
   }
 
-  const topic = row.visibility === 'all'
-    ? 'all'
+  const recipientUserTypes = row.visibility === 'all'
+    ? ['student', 'faculty']
     : ['student', 'faculty'].includes(row.visibility)
-      ? row.visibility
+      ? [row.visibility]
       : null;
-  if (!topic) return json({error: 'The event has an unsupported notification audience.'}, 400);
+  if (!recipientUserTypes) return json({error: 'The event has an unsupported notification audience.'}, 400);
+
+  let tokens: {fcm_token: string}[] = [];
+  for (let offset = 0; ; offset += 1000) {
+    const {data: deviceTokens, error: tokenError} = await adminClient.rpc(
+      'get_event_push_device_tokens',
+      {p_user_types: recipientUserTypes, p_offset: offset, p_limit: 1000},
+    );
+    if (tokenError) {
+      console.error('Could not load registered push devices:', tokenError.message);
+      return json({error: 'Could not load registered push devices.'}, 500);
+    }
+    const page = deviceTokens ?? [];
+    tokens.push(...page);
+    if (page.length < 1000) break;
+  }
 
   const {data: claimed, error: claimError} = await adminClient
     .from('event_notifications')
@@ -242,6 +257,10 @@ Deno.serve(async request => {
   }
   if (!claimed) return json({sent: false, reason: 'already_sent'});
 
+  if (tokens.length === 0) {
+    return json({sent: false, reason: 'no_registered_devices'});
+  }
+
   try {
     const rawServiceAccount = Deno.env.get('FIREBASE_SERVICE_ACCOUNT');
     if (!rawServiceAccount) throw new Error('FIREBASE_SERVICE_ACCOUNT is not configured.');
@@ -250,45 +269,102 @@ Deno.serve(async request => {
     if (!projectId) throw new Error('FIREBASE_SERVICE_ACCOUNT is missing project_id.');
 
     const accessToken = await getFirebaseAccessToken(serviceAccount);
-    const fcmResponse = await fetch(
-      `https://fcm.googleapis.com/v1/projects/${encodeURIComponent(projectId)}/messages:send`,
-      {
-        method: 'POST',
-        headers: {
-          authorization: `Bearer ${accessToken}`,
-          'content-type': 'application/json',
-        },
-        body: JSON.stringify({
-          message: {
-            topic,
-            notification: {title: row.title, body: row.message},
-            android: {
-              priority: 'high',
-              notification: {
-                channel_id: 'univents_event_updates_v2',
-                icon: 'ic_stat_univents',
-                color: '#5B4BFF',
-                sound: 'default',
-                ...(row.image_url ? {image: row.image_url} : {}),
+    const sendToToken = async (fcmToken: string) => {
+      try {
+        const fcmResponse = await fetch(
+          `https://fcm.googleapis.com/v1/projects/${encodeURIComponent(projectId)}/messages:send`,
+          {
+            method: 'POST',
+            headers: {
+              authorization: `Bearer ${accessToken}`,
+              'content-type': 'application/json',
+            },
+            body: JSON.stringify({
+              message: {
+                token: fcmToken,
+                notification: {title: row.title, body: row.message},
+                android: {
+                  priority: 'high',
+                  notification: {
+                    channel_id: 'univents_event_updates_v2',
+                    icon: 'ic_stat_univents',
+                    color: '#5B4BFF',
+                    sound: 'default',
+                    ...(row.image_url ? {image: row.image_url} : {}),
+                  },
+                },
+                data: {
+                  notification_id: row.id,
+                  event_id: row.event_id,
+                  type: 'event_published',
+                },
               },
-            },
-            data: {
-              notification_id: row.id,
-              event_id: row.event_id,
-              type: 'event_published',
-            },
+            }),
           },
-        }),
-      },
-    );
+        );
+        if (fcmResponse.ok) return {sent: true, token: fcmToken};
+        const details = await fcmResponse.text();
+        return {sent: false, token: fcmToken, status: fcmResponse.status, details};
+      } catch (error) {
+        return {
+          sent: false,
+          token: fcmToken,
+          status: 0,
+          details: error instanceof Error ? error.message : 'FCM request failed.',
+        };
+      }
+    };
 
-    if (!fcmResponse.ok) {
-      const details = await fcmResponse.text();
-      console.error('FCM send failed:', fcmResponse.status, details);
-      throw new Error('Firebase rejected the push notification.');
+    const results: Awaited<ReturnType<typeof sendToToken>>[] = [];
+    for (let index = 0; index < tokens.length; index += 10) {
+      const batch = tokens.slice(index, index + 10);
+      results.push(...await Promise.all(batch.map(device => sendToToken(device.fcm_token))));
     }
 
-    return json({sent: true, topic});
+    const sentTokens = results.filter(result => result.sent);
+    const failedTokens = results.filter(
+      (result): result is Extract<typeof result, {sent: false}> => !result.sent,
+    );
+    const invalidTokens = failedTokens.filter(result => {
+      try {
+        const error = JSON.parse(result.details);
+        return error.error?.details?.some((detail: {errorCode?: string}) =>
+          detail.errorCode === 'UNREGISTERED');
+      } catch {
+        return false;
+      }
+    });
+
+    if (invalidTokens.length > 0) {
+      const {error: cleanupError} = await adminClient
+        .from('device_tokens')
+        .delete()
+        .in('fcm_token', invalidTokens.map(result => result.token));
+      if (cleanupError) {
+        console.error('Could not remove invalid push device tokens:', cleanupError.message);
+      }
+    }
+
+    if (failedTokens.length > 0) {
+      console.error(
+        `FCM rejected ${failedTokens.length} of ${results.length} event push deliveries.`,
+        failedTokens.map(result => ({status: result.status, details: result.details})),
+      );
+    }
+    if (sentTokens.length === 0) {
+      const {error: releaseError} = await adminClient
+        .from('event_notifications')
+        .update({push_sent_at: null})
+        .eq('id', row.id);
+      if (releaseError) console.error('Could not release failed push claim:', releaseError.message);
+      return json({error: 'Firebase rejected all push notification deliveries.'}, 502);
+    }
+
+    return json({
+      sent: true,
+      sent_count: sentTokens.length,
+      failed_count: failedTokens.length,
+    });
   } catch (error) {
     const {error: releaseError} = await adminClient.from('event_notifications')
       .update({push_sent_at: null}).eq('id', row.id);

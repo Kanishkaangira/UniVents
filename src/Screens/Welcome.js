@@ -18,7 +18,6 @@ export default function Welcome({navigation}) {
   const wordAnimations = useMemo(() => WORDS.map(() => new Animated.Value(0)), []);
   const featureAnimations = useMemo(() => Array.from({length: 3}, () => new Animated.Value(0)), []);
   const buttonAnimation = useRef(new Animated.Value(0)).current;
-  const exitAnimation = useRef(new Animated.Value(0)).current;
   const orbit = useRef(new Animated.Value(0)).current;
   const pulse = useRef(new Animated.Value(0)).current;
   const progress = useRef(new Animated.Value(0)).current;
@@ -39,59 +38,58 @@ export default function Welcome({navigation}) {
     ]));
     pulseLoop.start();
 
-    Animated.stagger(55, greetingAnimations.map(value => Animated.spring(value, {
-      toValue: 1,
-      tension: 68,
-      friction: 8,
-      useNativeDriver: true,
-    }))).start(({finished}) => {
-      if (!finished || !isMounted) return;
-      Animated.stagger(36, wordAnimations.map(value => Animated.timing(value, {
+    const intro = Animated.parallel([
+      Animated.stagger(38, greetingAnimations.map(value => Animated.spring(value, {
         toValue: 1,
-        duration: 230,
+        tension: 68,
+        friction: 8,
+        useNativeDriver: true,
+      }))),
+      Animated.stagger(28, wordAnimations.map(value => Animated.timing(value, {
+        toValue: 1,
+        duration: 190,
         easing: Easing.out(Easing.cubic),
         useNativeDriver: true,
-      }))).start(({finished: wordsFinished}) => {
-        if (!wordsFinished || !isMounted) return;
-        Animated.stagger(70, featureAnimations.map(value => Animated.spring(value, {
-          toValue: 1,
-          tension: 72,
-          friction: 9,
-          useNativeDriver: true,
-        }))).start(({finished: featuresFinished}) => {
-          if (!featuresFinished || !isMounted) return;
-          Animated.timing(buttonAnimation, {toValue: 1, duration: 180, useNativeDriver: true}).start(({finished: footerFinished}) => {
-            if (!footerFinished || !isMounted) return;
-            setReady(true);
-            Animated.timing(progress, {toValue: 1, duration: 220, easing: Easing.inOut(Easing.cubic), useNativeDriver: false}).start(({finished: progressFinished}) => {
-              if (!progressFinished || !isMounted) return;
-              Animated.timing(exitAnimation, {toValue: 1, duration: 170, easing: Easing.in(Easing.cubic), useNativeDriver: true}).start(({finished: exitFinished}) => {
-                if (exitFinished && isMounted) navigation.replace('Main');
-              });
-            });
-          });
-        });
-      });
+      }))),
+      Animated.stagger(45, featureAnimations.map(value => Animated.spring(value, {
+        toValue: 1,
+        tension: 72,
+        friction: 9,
+        useNativeDriver: true,
+      }))),
+      Animated.sequence([
+        Animated.delay(170),
+        Animated.timing(buttonAnimation, {toValue: 1, duration: 180, useNativeDriver: true}),
+      ]),
+      Animated.timing(progress, {
+        toValue: 1,
+        duration: 700,
+        easing: Easing.inOut(Easing.cubic),
+        useNativeDriver: false,
+      }),
+    ]);
+    intro.start(({finished}) => {
+      if (!finished || !isMounted) return;
+      setReady(true);
+      navigation.replace('Main');
     });
+
     return () => {
       isMounted = false;
       orbitLoop.stop();
       pulseLoop.stop();
-      [...greetingAnimations, ...wordAnimations, ...featureAnimations, buttonAnimation, progress, exitAnimation].forEach(value => value.stopAnimation());
+      intro.stop();
+      [...greetingAnimations, ...wordAnimations, ...featureAnimations, buttonAnimation, progress].forEach(value => value.stopAnimation());
     };
-  }, [greetingAnimations, wordAnimations, featureAnimations, buttonAnimation, exitAnimation, orbit, pulse, progress, navigation]);
+  }, [greetingAnimations, wordAnimations, featureAnimations, buttonAnimation, orbit, pulse, progress, navigation]);
 
   const orbitRotation = orbit.interpolate({inputRange: [0, 1], outputRange: ['0deg', '360deg']});
   const heroScale = pulse.interpolate({inputRange: [0, 1], outputRange: [1, 1.055]});
   const floatLeft = pulse.interpolate({inputRange: [0, 1], outputRange: [0, -8]});
   const floatRight = pulse.interpolate({inputRange: [0, 1], outputRange: [0, 7]});
   const progressWidth = progress.interpolate({inputRange: [0, 1], outputRange: ['4%', '100%']});
-  const rootOpacity = exitAnimation.interpolate({inputRange: [0, 1], outputRange: [1, 0.72]});
-  const rootTranslate = exitAnimation.interpolate({inputRange: [0, 1], outputRange: [0, -18]});
-  const rootScale = exitAnimation.interpolate({inputRange: [0, 1], outputRange: [1, 0.97]});
-
   return (
-    <Animated.View style={[styles.root, {opacity: rootOpacity, transform: [{translateY: rootTranslate}, {scale: rootScale}]}]}>
+    <Animated.View style={styles.root}>
       <LinearGradient colors={['#F8F8FF', '#F0F1FF', '#FFFFFF']} style={StyleSheet.absoluteFill} />
       <View pointerEvents="none" style={styles.glowTop} />
       <View pointerEvents="none" style={styles.glowBottom} />

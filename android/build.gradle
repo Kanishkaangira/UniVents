@@ -21,14 +21,7 @@ buildscript {
 
 apply plugin: "com.facebook.react.rootproject"
 
-// Keep generated Android outputs out of the OneDrive-synced project tree.
-def localBuildRoot = new File(
-    System.getenv("LOCALAPPDATA") ?: new File(System.getProperty("user.home"), ".cache").absolutePath,
-    "UniVents/gradle-build"
-)
 subprojects { subproject ->
-    subproject.layout.buildDirectory.set(new File(localBuildRoot, subproject.name))
-
     // On Windows, the NDK exposes libc++_shared.so as a hard link for
     // react-native-screens. Gradle 9.4 incorrectly treats that output as a
     // non-regular file while snapshotting the CMake task, so disable state
