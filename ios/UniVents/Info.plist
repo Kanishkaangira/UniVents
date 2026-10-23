@@ -36,6 +36,10 @@
 	</dict>
 	<key>NSLocationWhenInUseUsageDescription</key>
 	<string></string>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>UniVents uses the microphone to turn your spoken chatbot questions into text.</string>
+	<key>NSSpeechRecognitionUsageDescription</key>
+	<string>UniVents uses speech recognition to transcribe questions for the campus assistant.</string>
 	<key>UILaunchStoryboardName</key>
 	<string>LaunchScreen</string>
 	<key>UIRequiredDeviceCapabilities</key>

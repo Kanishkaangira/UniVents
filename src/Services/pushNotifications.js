@@ -30,7 +30,7 @@ async function fetchEventNotification(remoteMessage) {
 
   const { data, error } = await supabase
     .from('event_notifications')
-    .select('id, event_id, title, message, image_url')
+    .select('id, event_id, content_type, title, message, image_url')
     .eq('id', notificationId)
     .maybeSingle();
 
@@ -91,13 +91,13 @@ export function listenForForegroundEventPushNotifications() {
                   type: AndroidStyle.BIGPICTURE,
                   picture: notification.image_url,
                   title: notification.title,
-                  summary: 'New event on UniVents',
+                  summary: `New ${notification.content_type === 'notice' ? 'notice' : 'event'} on UniVents`,
                 }
               : {
                   type: AndroidStyle.BIGTEXT,
                   text: notification.message,
                   title: notification.title,
-                  summary: 'New event on UniVents',
+                  summary: `New ${notification.content_type === 'notice' ? 'notice' : 'event'} on UniVents`,
                 };
 
             await notifee.displayNotification({

@@ -3,7 +3,7 @@ import {ActivityIndicator, Animated, Easing, StyleSheet, Text, TouchableOpacity,
 import Icon from 'react-native-vector-icons/Ionicons';
 import Screen from '../Components/Screen';
 import ScreenHeader from '../Components/ScreenHeader';
-import {fetchEventNotifications} from '../Services/api';
+import {fetchPostNotifications} from '../Services/api';
 import {colors, shadow} from '../Constants/theme';
 import {useApp} from '../Context/AppContext';
 
@@ -33,12 +33,12 @@ export default function Notifications({navigation}) {
     if (!profile?.user_type) {
       setItems([]);
       setLoading(false);
-      setError('Complete your profile to see event notifications.');
+      setError('Complete your profile to see notifications.');
       return;
     }
     setError('');
     try {
-      setItems(await fetchEventNotifications(profile.user_type));
+      setItems(await fetchPostNotifications(profile.user_type));
     } catch (loadError) {
       setError(loadError.message || 'Could not load notifications.');
     } finally {
@@ -70,7 +70,7 @@ export default function Notifications({navigation}) {
         <View style={styles.introIcon}><Icon name="notifications" size={19} color={colors.primary} /></View>
         <View style={styles.introCopy}>
           <Text style={styles.introTitle}>Fresh from campus</Text>
-          <Text style={styles.introText}>Newly approved events, all in one place.</Text>
+          <Text style={styles.introText}>Approved events and notices, all in one place.</Text>
         </View>
         <Text style={styles.count}>{items.length}</Text>
       </View>
@@ -90,11 +90,16 @@ export default function Notifications({navigation}) {
           const time = formatTime(item.start_time);
           const details = [date, time, item.venue].filter(Boolean).join('  ·  ');
           return (
-            <TouchableOpacity key={item.id} activeOpacity={0.88} onPress={() => navigation.navigate('Main', {screen: 'Events'})} style={styles.card}>
+            <TouchableOpacity
+              key={item.id}
+              activeOpacity={0.88}
+              onPress={() => navigation.navigate('Main', {screen: item.content_type === 'notice' ? 'Notice' : 'Events'})}
+              style={styles.card}
+            >
               <View style={styles.notificationMark}><Icon name="notifications" size={18} color={colors.primary} /></View>
               <View style={styles.cardContent}>
                 <View style={styles.cardTop}>
-                  <Text style={styles.liveText}>NEW EVENT</Text>
+                  <Text style={styles.liveText}>NEW {item.content_type === 'notice' ? 'NOTICE' : 'EVENT'}</Text>
                   <Text style={styles.published}>{formatDate(String(item.published_at || '').slice(0, 10)) || 'Just added'}</Text>
                 </View>
                 <Text style={styles.cardTitle}>{item.title}</Text>
@@ -115,7 +120,7 @@ export default function Notifications({navigation}) {
             </View>
             <Text style={styles.emptyEyebrow}>YOU'RE ALL CAUGHT UP</Text>
             <Text style={styles.stateTitle}>It's quiet for now</Text>
-            <Text style={styles.stateText}>When a new event gets approved, its details will pop up here. Keep an eye out for your next campus moment.</Text>
+            <Text style={styles.stateText}>When an event or notice is approved, it will appear here. Keep an eye out for the latest campus updates.</Text>
             <TouchableOpacity onPress={() => navigation.navigate('Main', {screen: 'Events'})} style={styles.retryButton}><Text style={styles.retryText}>Explore events</Text><Icon name="arrow-forward" size={15} color="#fff" /></TouchableOpacity>
           </View>
         </View>

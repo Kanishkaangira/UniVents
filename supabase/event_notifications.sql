@@ -1,11 +1,11 @@
--- Approved event notification feed for the UniVents app.
--- Run after admin_skill_faculty_scope.sql. This stores an event snapshot so the
--- app can render notification cards without joining several event fields.
+-- Approved event and notice notification feed for the UniVents app.
+-- Run after admin_skill_faculty_scope.sql.
 
 create table if not exists public.event_notifications (
   id uuid primary key default gen_random_uuid(),
   event_id uuid not null unique
     references public.events(id) on delete cascade,
+  content_type text not null default 'event',
   title text not null,
   message text not null,
   event_date date,
@@ -14,9 +14,13 @@ create table if not exists public.event_notifications (
   image_url text,
   organizer_name text,
   visibility text not null,
-  
+  push_sent_at timestamptz,
   published_at timestamptz not null default now()
 );
+
+alter table public.event_notifications
+  add column if not exists content_type text not null default 'event',
+  add column if not exists push_sent_at timestamptz;
 
 -- If the earlier expanded draft was already applied, keep this table limited
 -- to fields used by the user-facing notification card.
@@ -51,7 +55,8 @@ create policy event_notifications_app_read
       select 1
       from public.events as event_row
       where event_row.id = event_notifications.event_id
-        and event_row.content_type::text = 'event'
+        and event_row.content_type::text = event_notifications.content_type
+        and event_row.content_type::text in ('event', 'notice')
         and event_row.approval::text = 'approved'
     )
     and (
@@ -87,36 +92,46 @@ begin
       and new.approval::text = 'approved';
   end if;
 
-  if new.content_type::text <> 'event'
+  if new.content_type::text not in ('event', 'notice')
     or new.approval::text <> 'approved' then
     delete from public.event_notifications
     where event_id = new.id;
     return new;
   end if;
 
-  notification_message := coalesce(
-    nullif(pg_catalog.concat_ws(
-      ' | ',
-      case when new.event_date is not null
-        then pg_catalog.to_char(new.event_date, 'Mon FMDD') end,
-      case when new.start_time is not null
-        then pg_catalog.to_char(new.start_time, 'FMHH12:MI AM') end,
-      nullif(new.venue, ''),
-      nullif(new.organizer_name, '')
-    ), ''),
-    'An approved event is now live on UniVents.'
-  );
+  notification_message := case when new.content_type::text = 'notice'
+    then coalesce(nullif(new.description, ''), 'A new notice is now available on UniVents.')
+    else coalesce(
+      nullif(pg_catalog.concat_ws(
+        ' | ',
+        case when new.event_date is not null
+          then pg_catalog.to_char(new.event_date, 'Mon FMDD') end,
+        case when new.start_time is not null
+          then pg_catalog.to_char(new.start_time, 'FMHH12:MI AM') end,
+        nullif(new.venue, ''),
+        nullif(new.organizer_name, '')
+      ), ''),
+      'An approved event is now live on UniVents.'
+    )
+  end;
 
   insert into public.event_notifications as notification (
-    event_id, title, message, event_date, start_time,
-    venue, image_url, organizer_name, visibility, published_at
+    event_id, content_type, title, message, event_date, start_time,
+    venue, image_url, organizer_name, visibility, push_sent_at, published_at
   ) values (
-    new.id, new.title, notification_message, new.event_date,
-    new.start_time, new.venue, new.image_url,
-    new.organizer_name, new.visibility,
+    new.id, new.content_type::text, new.title, notification_message, new.event_date,
+    new.start_time, new.venue,
+    case
+      when new.content_type::text = 'notice' and new.attachment_type::text = 'image'
+        then new.attachment_url
+      when new.content_type::text = 'event' then new.image_url
+      else null
+    end,
+    new.organizer_name, new.visibility, null,
     now()
   )
   on conflict (event_id) do update set
+    content_type = excluded.content_type,
     title = excluded.title,
     message = excluded.message,
     event_date = excluded.event_date,
@@ -135,37 +150,49 @@ $$;
 drop trigger if exists events_sync_approved_notification on public.events;
 create trigger events_sync_approved_notification
 after insert or update of approval, content_type, title, description, category,
-  event_date, start_time, venue, image_url, organizer_name, visibility
+  event_date, start_time, venue, image_url, attachment_url, attachment_type,
+  organizer_name, visibility
 on public.events
 for each row execute function public.sync_approved_event_notification();
 
--- Backfill approved events already in the app. Rerunning this file updates
+-- Backfill approved posts already in the app. Rerunning this file updates
 -- snapshots while retaining the original publish time for existing rows.
 insert into public.event_notifications (
-  event_id, title, message, event_date, start_time,
-  venue, image_url, organizer_name, visibility
+  event_id, content_type, title, message, event_date, start_time,
+  venue, image_url, organizer_name, visibility, push_sent_at
 )
 select
   event_row.id,
+  event_row.content_type::text,
   event_row.title,
-  coalesce(
-    nullif(pg_catalog.concat_ws(
-      ' | ',
-      case when event_row.event_date is not null
-        then pg_catalog.to_char(event_row.event_date, 'Mon FMDD') end,
-      case when event_row.start_time is not null
-        then pg_catalog.to_char(event_row.start_time, 'FMHH12:MI AM') end,
-      nullif(event_row.venue, ''),
-      nullif(event_row.organizer_name, '')
-    ), ''),
-    'An approved event is now live on UniVents.'
-  ),
+  case when event_row.content_type::text = 'notice'
+    then coalesce(nullif(event_row.description, ''), 'A new notice is now available on UniVents.')
+    else coalesce(
+      nullif(pg_catalog.concat_ws(
+        ' | ',
+        case when event_row.event_date is not null
+          then pg_catalog.to_char(event_row.event_date, 'Mon FMDD') end,
+        case when event_row.start_time is not null
+          then pg_catalog.to_char(event_row.start_time, 'FMHH12:MI AM') end,
+        nullif(event_row.venue, ''),
+        nullif(event_row.organizer_name, '')
+      ), ''),
+      'An approved event is now live on UniVents.'
+    )
+  end,
   event_row.event_date, event_row.start_time, event_row.venue,
-  event_row.image_url, event_row.organizer_name, event_row.visibility
+  case
+    when event_row.content_type::text = 'notice' and event_row.attachment_type::text = 'image'
+      then event_row.attachment_url
+    when event_row.content_type::text = 'event' then event_row.image_url
+    else null
+  end,
+  event_row.organizer_name, event_row.visibility, null
 from public.events as event_row
-where event_row.content_type::text = 'event'
+where event_row.content_type::text in ('event', 'notice')
   and event_row.approval::text = 'approved'
 on conflict (event_id) do update set
+  content_type = excluded.content_type,
   title = excluded.title,
   message = excluded.message,
   event_date = excluded.event_date,
@@ -175,7 +202,7 @@ on conflict (event_id) do update set
   organizer_name = excluded.organizer_name,
   visibility = excluded.visibility;
 
--- Realtime lets the mobile app subscribe to newly approved event notifications.
+-- Realtime lets the mobile app subscribe to newly approved post notifications.
 do $$
 begin
   if exists (

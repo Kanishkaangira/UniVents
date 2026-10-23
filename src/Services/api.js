@@ -70,8 +70,8 @@ export const fetchPosts = userType =>
     .order('created_at', {ascending: false})
     .then(check);
 
-// Approved event notification snapshots are maintained by the database trigger.
-export const fetchEventNotifications = userType =>
+// Approved event and notice snapshots are maintained by the database trigger.
+export const fetchPostNotifications = userType =>
   supabase
     .from('event_notifications')
     .select('*')

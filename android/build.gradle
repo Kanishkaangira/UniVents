@@ -22,23 +22,22 @@ buildscript {
 apply plugin: "com.facebook.react.rootproject"
 
 subprojects { subproject ->
-    // On Windows, the NDK exposes libc++_shared.so as a hard link for
-    // react-native-screens. Gradle 9.4 incorrectly treats that output as a
-    // non-regular file while snapshotting the CMake task, so disable state
-    // tracking for these native build tasks only.
-    if (System.getProperty("os.name").toLowerCase().contains("windows") &&
-            subproject.name == "react-native-screens") {
+    // The Windows NDK and Gradle transform cache can expose shared libraries
+    // as hard links. Gradle 9.4 cannot snapshot those files as CMake outputs.
+    if (System.getProperty("os.name").toLowerCase().contains("windows")) {
         subproject.tasks.configureEach { task ->
+            if (task.name == "generateCodegenArtifactsFromSchema" || task.name.startsWith("buildCMakeDebug")) {
+                task.doNotTrackState("Gradle cannot snapshot generated or native linked files on Windows.")
+            }
             if (task.name.startsWith("buildCMakeDebug")) {
-                task.doNotTrackState("Gradle cannot snapshot the NDK libc++ hard link on Windows.")
                 task.doLast {
                     task.outputs.files.files.each { File output ->
                         if (!output.exists()) return
                         def regularize = { File artifact ->
-                            if (artifact.name == "libc++_shared.so" && artifact.isFile()) {
+                            if (artifact.name.endsWith(".so") && artifact.isFile()) {
                                 byte[] contents = artifact.bytes
                                 if (!artifact.delete()) {
-                                    throw new GradleException("Could not replace NDK hard link: ${artifact}")
+                                    throw new GradleException("Could not replace native library hard link: ${artifact}")
                                 }
                                 artifact.withOutputStream { stream -> stream.write(contents) }
                             }

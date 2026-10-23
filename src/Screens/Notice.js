@@ -25,7 +25,7 @@ export default function Notice() {
         searchKeys={SEARCH_KEYS}
         searchPlaceholder="Search notices…"
         renderItem={item => (
-          <NoticeCard key={item.id} item={item} onPress={() => open(item)} />
+          <NoticeCard key={item.id} item={item} dense onPress={() => open(item)} />
         )}
       />
       <NoticeDetailSheet notice={selected} visible={!!selected} onClose={() => setSelected(null)} />

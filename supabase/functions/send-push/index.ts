@@ -15,6 +15,7 @@ const corsHeaders = {
 type EventNotification = {
   id: string;
   event_id: string;
+  content_type: string;
   title: string;
   message: string;
   visibility: string;
@@ -178,10 +179,45 @@ Deno.serve(async request => {
   let row: EventNotification;
   try {
     if (isDatabaseWebhook) {
-      if (payload.type !== 'INSERT' || payload.table !== 'event_notifications' || !payload.record) {
-        return json({ignored: true, reason: 'Not an event notification insert.'});
+      if (payload.table === 'event_notifications' && payload.type === 'INSERT' && payload.record) {
+        row = payload.record as EventNotification;
+      } else if (
+        payload.table === 'events'
+        && ['INSERT', 'UPDATE'].includes(String(payload.type))
+        && payload.record
+        && typeof (payload.record as Record<string, unknown>).id === 'string'
+      ) {
+        const eventRecord = payload.record as Record<string, unknown>;
+        const eventId = eventRecord.id as string;
+        const oldEventRecord = (payload.old_record ?? payload.old) as Record<string, unknown> | undefined;
+        if (
+          payload.type === 'UPDATE'
+          && (!oldEventRecord || oldEventRecord.approval === 'approved')
+        ) {
+          return json({ignored: true, reason: 'The post was not newly approved.'});
+        }
+
+        const {data: event, error: eventError} = await adminClient
+          .from('events')
+          .select('id, content_type, approval')
+          .eq('id', eventId)
+          .maybeSingle();
+        if (eventError) throw eventError;
+        if (!event || !['event', 'notice'].includes(event.content_type) || event.approval !== 'approved') {
+          return json({ignored: true, reason: 'The post is not approved for notification.'});
+        }
+
+        const {data, error: notificationError} = await adminClient
+          .from('event_notifications')
+          .select('id, event_id, content_type, title, message, visibility, image_url')
+          .eq('event_id', eventId)
+          .maybeSingle();
+        if (notificationError) throw notificationError;
+        if (!data) return json({ignored: true, reason: 'The approved post notification row was not created.'});
+        row = data as EventNotification;
+      } else {
+        return json({ignored: true, reason: 'Unsupported database webhook event.'});
       }
-      row = payload.record as EventNotification;
     } else {
       const eventId = typeof payload.event_id === 'string' ? payload.event_id : '';
       if (!eventId) return json({error: 'event_id is required.'}, 400);
@@ -200,17 +236,17 @@ Deno.serve(async request => {
       if (!admin || !event || !adminCanReviewEvent(admin as AdminRow, event as EventRow)) {
         return json({error: 'This event is outside your admin scope.'}, 403);
       }
-      if (event.content_type !== 'event' || event.approval !== 'approved') {
-        return json({error: 'Only approved events can send a push notification.'}, 409);
+      if (!['event', 'notice'].includes(event.content_type) || event.approval !== 'approved') {
+        return json({error: 'Only approved events and notices can send a push notification.'}, 409);
       }
 
       const {data, error: notificationError} = await adminClient
         .from('event_notifications')
-        .select('id, event_id, title, message, visibility, image_url')
+        .select('id, event_id, content_type, title, message, visibility, image_url')
         .eq('event_id', eventId)
         .maybeSingle();
       if (notificationError) throw notificationError;
-      if (!data) return json({error: 'The approved event notification row was not created.'}, 409);
+      if (!data) return json({error: 'The approved post notification row was not created.'}, 409);
       row = data as EventNotification;
     }
   } catch (error) {
@@ -218,8 +254,9 @@ Deno.serve(async request => {
     return json({error: 'Could not load the approved event notification.'}, 500);
   }
 
-  if (!row.id || !row.event_id || !row.title || !row.message) {
-    return json({error: 'Notification row is missing required fields.'}, 400);
+  if (!row.id || !row.event_id || !row.title || !row.message
+    || !['event', 'notice'].includes(row.content_type)) {
+    return json({error: 'Post notification row is missing required fields.'}, 400);
   }
 
   const recipientUserTypes = row.visibility === 'all'
@@ -227,7 +264,7 @@ Deno.serve(async request => {
     : ['student', 'faculty'].includes(row.visibility)
       ? [row.visibility]
       : null;
-  if (!recipientUserTypes) return json({error: 'The event has an unsupported notification audience.'}, 400);
+  if (!recipientUserTypes) return json({error: 'The post has an unsupported notification audience.'}, 400);
 
   let tokens: {fcm_token: string}[] = [];
   for (let offset = 0; ; offset += 1000) {
@@ -296,7 +333,7 @@ Deno.serve(async request => {
                 data: {
                   notification_id: row.id,
                   event_id: row.event_id,
-                  type: 'event_published',
+                  type: `${row.content_type}_published`,
                 },
               },
             }),

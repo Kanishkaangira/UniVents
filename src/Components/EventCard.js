@@ -4,7 +4,7 @@ import LinearGradient from 'react-native-linear-gradient';
 import Icon from 'react-native-vector-icons/Ionicons';
 import {colors, gradients, shadow} from '../Constants/theme';
 
-export default function EventCard({item, saved, onPress, onToggleSave, compact, large = false}) {
+export default function EventCard({item, saved, onPress, onToggleSave, compact, large = false, dense = false}) {
   const [day, month] = item.date.split(' ');
   const organizerLabel = item.organizerScope === 'department' ? item.scopeLabel || item.departmentCode || item.org : item.org;
   const statusStyle = {
@@ -16,7 +16,7 @@ export default function EventCard({item, saved, onPress, onToggleSave, compact, 
     return (
       <TouchableOpacity activeOpacity={0.92} style={styles.largeCard} onPress={onPress}>
         {item.imageUrl ? (
-          <ImageBackground source={{uri: item.imageUrl}} imageStyle={styles.largeImage} style={styles.largeHero}>
+          <ImageBackground source={{uri: item.imageUrl}} imageStyle={styles.largeImage} style={[styles.largeHero, dense && styles.largeHeroDense]}>
             <View style={styles.heroShade} />
             <DateBadge day={day} month={month} />
             {onToggleSave && <SaveButton saved={saved} onPress={onToggleSave} large />}
@@ -29,7 +29,7 @@ export default function EventCard({item, saved, onPress, onToggleSave, compact, 
             </View>
           </ImageBackground>
         ) : (
-          <LinearGradient colors={gradients[item.grad]} start={{x: 0, y: 0}} end={{x: 1, y: 1}} style={styles.largeHero}>
+          <LinearGradient colors={gradients[item.grad]} start={{x: 0, y: 0}} end={{x: 1, y: 1}} style={[styles.largeHero, dense && styles.largeHeroDense]}>
             <Text style={styles.largeEmoji}>{item.emoji}</Text>
             <DateBadge day={day} month={month} />
             {onToggleSave && <SaveButton saved={saved} onPress={onToggleSave} large />}
@@ -42,20 +42,20 @@ export default function EventCard({item, saved, onPress, onToggleSave, compact, 
             </View>
           </LinearGradient>
         )}
-        <View style={styles.largeBody}>
+        <View style={[styles.largeBody, dense && styles.largeBodyDense]}>
           <View style={styles.largeTitleRow}>
             <Text style={styles.largeTitle} numberOfLines={2}>{item.title}</Text>
           </View>
           {!!item.desc && <Text style={styles.largeDescription} numberOfLines={2}>{item.desc}</Text>}
-          <View style={styles.largeMetaRow}>
+          <View style={[styles.largeMetaRow, dense && styles.largeMetaRowDense]}>
             <View style={styles.metaIconTime}><Icon name="time-outline" size={15} color="#B05D08" /></View>
             <Text style={styles.largeMetaText}>{item.time}</Text>
           </View>
-          <View style={styles.largeMetaRow}>
+          <View style={[styles.largeMetaRow, dense && styles.largeMetaRowDense]}>
             <View style={styles.metaIconLocation}><Icon name="location-outline" size={15} color="#087E80" /></View>
             <Text style={styles.largeMetaText} numberOfLines={1}>{item.venue || 'Venue to be announced'}</Text>
           </View>
-          <View style={styles.largeFooter}>
+          <View style={[styles.largeFooter, dense && styles.largeFooterDense]}>
             <View style={styles.organizerIcon}><Icon name="people-outline" size={15} color="#087E80" /></View>
             <Text style={styles.organizerText} numberOfLines={1}>{organizerLabel || 'University organizer'}</Text>
             {item.registrationRequired && (
@@ -118,6 +118,7 @@ const styles = StyleSheet.create({
   date: {width: 62, height: 66, borderRadius: 16, alignItems: 'center', justifyContent: 'center'},
   largeCard: {backgroundColor: '#fff', borderRadius: 22, marginBottom: 16, overflow: 'hidden', ...shadow, shadowOpacity: 0.09},
   largeHero: {height: 156, width: '100%', alignItems: 'center', justifyContent: 'center'},
+  largeHeroDense: {height: 142},
   largeImage: {borderTopLeftRadius: 22, borderTopRightRadius: 22},
   heroShade: {...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(18,20,43,0.18)'},
   largeEmoji: {fontSize: 54},
@@ -133,14 +134,17 @@ const styles = StyleSheet.create({
   eventStatusCancelled: {backgroundColor: colors.danger},
   eventStatusText: {fontSize: 10, fontWeight: '900', color: '#fff', textTransform: 'capitalize', letterSpacing: 0.15},
   largeBody: {paddingHorizontal: 16, paddingTop: 13, paddingBottom: 14},
+  largeBodyDense: {paddingHorizontal: 14, paddingTop: 11, paddingBottom: 12},
   largeTitleRow: {flexDirection: 'row', alignItems: 'flex-start', gap: 8},
   largeTitle: {flex: 1, fontSize: 17, lineHeight: 22, fontWeight: '800', color: colors.ink},
   largeDescription: {fontSize: 12, lineHeight: 17, color: colors.mute, marginTop: 5, marginBottom: 4},
   largeMetaRow: {flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 8},
+  largeMetaRowDense: {marginTop: 6},
   metaIconTime: {width: 27, height: 27, borderRadius: 9, backgroundColor: '#FFF3E4', alignItems: 'center', justifyContent: 'center'},
   metaIconLocation: {width: 27, height: 27, borderRadius: 9, backgroundColor: '#E8F8F6', alignItems: 'center', justifyContent: 'center'},
   largeMetaText: {flex: 1, fontSize: 12, fontWeight: '600', color: colors.ink},
   largeFooter: {flexDirection: 'row', alignItems: 'center', borderTopWidth: 1, borderTopColor: colors.line, paddingTop: 10, marginTop: 12, gap: 7},
+  largeFooterDense: {paddingTop: 8, marginTop: 9},
   organizerIcon: {width: 25, height: 25, borderRadius: 9, backgroundColor: '#E8F8F6', alignItems: 'center', justifyContent: 'center'},
   organizerText: {flex: 1, fontSize: 11, fontWeight: '700', color: colors.mute},
   registrationBadge: {flexDirection: 'row', alignItems: 'center', gap: 5, borderRadius: 99, paddingHorizontal: 10, paddingVertical: 7, shadowColor: colors.primary, shadowOpacity: 0.26, shadowRadius: 7, shadowOffset: {width: 0, height: 3}, elevation: 4},

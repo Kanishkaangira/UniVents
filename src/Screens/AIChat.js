@@ -1,157 +1,495 @@
 import React, {useEffect, useRef, useState} from 'react';
-import {Alert, Animated, Easing, StyleSheet, Text, TextInput, TouchableOpacity, View} from 'react-native';
+import {
+  Alert,
+  ActivityIndicator,
+  Keyboard,
+  KeyboardAvoidingView,
+  PermissionsAndroid,
+  Platform,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View,
+} from 'react-native';
 import LinearGradient from 'react-native-linear-gradient';
 import Icon from 'react-native-vector-icons/Ionicons';
-import Screen from '../Components/Screen';
+import {useSafeAreaInsets} from 'react-native-safe-area-context';
 import {colors, shadow} from '../Constants/theme';
+import {supabase} from '../Services/supabase';
+import VoiceToText, {VoiceToTextEvents} from '@appcitor/react-native-voice-to-text';
 
 const suggestions = [
   'What events are coming up?',
-  'Show me recent notices',
-  'Find department events',
+  'What events are happening this week?',
+  'Show me events at my department',
 ];
+
+const formatInlineText = (text, baseStyle, strongStyle) =>
+  text.split(/(\*\*[^*]+\*\*)/g).map((part, index) => {
+    const isStrong = part.startsWith('**') && part.endsWith('**');
+    return (
+      <Text key={`${index}-${part}`} style={[baseStyle, isStrong && strongStyle]}>
+        {isStrong ? part.slice(2, -2) : part}
+      </Text>
+    );
+  });
+
+function FormattedAnswer({text}) {
+  const blocks = text
+    .split(/\r?\n/)
+    .map(line => line.trim())
+    .filter(Boolean)
+    .map((line, index) => {
+      const heading = line.match(/^#{1,3}\s+(.+)$/) || line.match(/^\*\*(.+)\*\*$/);
+      const bullet = line.match(/^(?:[-*•])\s+(.+)$/);
+      const numbered = line.match(/^(\d+)[.)]\s+(.+)$/);
+      if (heading) return {kind: 'heading', text: heading[1], key: index};
+      if (bullet) return {kind: 'bullet', text: bullet[1], key: index};
+      if (numbered) return {kind: 'numbered', prefix: `${numbered[1]}.`, text: numbered[2], key: index};
+      return {kind: 'paragraph', text: line, key: index};
+    });
+
+  return (
+    <View style={styles.answerContent}>
+      {blocks.map(block => {
+        if (block.kind === 'heading') {
+          return (
+            <Text key={block.key} style={styles.answerHeading}>
+              {formatInlineText(block.text, styles.answerHeading, styles.answerStrong)}
+            </Text>
+          );
+        }
+        if (block.kind === 'bullet' || block.kind === 'numbered') {
+          return (
+            <View key={block.key} style={styles.answerListRow}>
+              {block.kind === 'bullet' ? (
+                <View style={styles.answerBullet} />
+              ) : (
+                <Text style={styles.answerNumber}>{block.prefix}</Text>
+              )}
+              <Text style={styles.answerParagraph}>
+                {formatInlineText(block.text, styles.answerParagraph, styles.answerStrong)}
+              </Text>
+            </View>
+          );
+        }
+        return (
+          <Text key={block.key} style={styles.answerParagraph}>
+            {formatInlineText(block.text, styles.answerParagraph, styles.answerStrong)}
+          </Text>
+        );
+      })}
+    </View>
+  );
+}
 
 export default function AIChat({navigation}) {
   const [question, setQuestion] = useState('');
-  const mascotFloat = useRef(new Animated.Value(0)).current;
-  const mascotWink = useRef(new Animated.Value(1)).current;
+  const [messages, setMessages] = useState([]);
+  const [sending, setSending] = useState(false);
+  const [keyboardVisible, setKeyboardVisible] = useState(false);
+  const [voiceListening, setVoiceListening] = useState(false);
+  const insets = useSafeAreaInsets();
+  const inputRef = useRef(null);
+  const messagesRef = useRef(null);
+  const voiceBaseText = useRef('');
 
-  useEffect(() => {
-    const floatLoop = Animated.loop(Animated.sequence([
-      Animated.timing(mascotFloat, {toValue: 1, duration: 1500, easing: Easing.inOut(Easing.sin), useNativeDriver: true}),
-      Animated.timing(mascotFloat, {toValue: 0, duration: 1500, easing: Easing.inOut(Easing.sin), useNativeDriver: true}),
-    ]));
-    floatLoop.start();
-    const winkLoop = Animated.loop(Animated.sequence([
-      Animated.delay(2300),
-      Animated.timing(mascotWink, {toValue: 0.12, duration: 90, useNativeDriver: true}),
-      Animated.delay(100),
-      Animated.timing(mascotWink, {toValue: 1, duration: 120, useNativeDriver: true}),
-      Animated.delay(2800),
-    ]));
-    winkLoop.start();
-    return () => {
-      floatLoop.stop();
-      winkLoop.stop();
-      mascotFloat.stopAnimation();
-      mascotWink.stopAnimation();
-    };
-  }, [mascotFloat, mascotWink]);
-
-  const mascotTranslate = mascotFloat.interpolate({inputRange: [0, 1], outputRange: [3, -5]});
-
-  const sendQuestion = () => {
-    if (!question.trim()) return;
-    Alert.alert('AI chat not connected', 'The chat screen is ready, but an AI response service has not been configured yet.');
+  const applyTranscript = transcript => {
+    const spokenText = transcript?.trim();
+    if (!spokenText) return;
+    const prefix = voiceBaseText.current;
+    setQuestion(prefix ? `${prefix} ${spokenText}` : spokenText);
   };
 
+  useEffect(() => {
+    const showSubscription = Keyboard.addListener('keyboardDidShow', () => setKeyboardVisible(true));
+    const hideSubscription = Keyboard.addListener('keyboardDidHide', () => setKeyboardVisible(false));
+    return () => {
+      showSubscription.remove();
+      hideSubscription.remove();
+    };
+  }, []);
+
+  useEffect(() => {
+    const subscriptions = [
+      VoiceToText.addEventListener(VoiceToTextEvents.START, () => setVoiceListening(true)),
+      VoiceToText.addEventListener(VoiceToTextEvents.END, () => setVoiceListening(false)),
+      VoiceToText.addEventListener(VoiceToTextEvents.RESULTS, event => applyTranscript(event.value)),
+      VoiceToText.addEventListener(VoiceToTextEvents.PARTIAL_RESULTS, event => applyTranscript(event.value)),
+      VoiceToText.addEventListener(VoiceToTextEvents.ERROR, event => {
+        setVoiceListening(false);
+        if (event.code !== 6 && event.code !== 7) {
+          Alert.alert('Voice input unavailable', event.message || 'Please try speaking again.');
+        }
+      }),
+    ];
+    return () => {
+      subscriptions.forEach(subscription => subscription.remove());
+      VoiceToText.destroy().catch(() => {});
+    };
+  }, []);
+
+  const scrollToLatest = () => messagesRef.current?.scrollToEnd({animated: true});
+
+  const sendQuestion = async () => {
+    const text = question.trim();
+    if (!text || sending) return;
+
+    const history = [];
+    for (let index = 0; index < messages.length - 1; index += 1) {
+      const userMessage = messages[index];
+      const assistantMessage = messages[index + 1];
+      if (
+        userMessage.role === 'user' &&
+        assistantMessage.role === 'assistant' &&
+        !assistantMessage.error
+      ) {
+        history.push(
+          {role: 'user', text: userMessage.text},
+          {role: 'model', text: assistantMessage.text},
+        );
+        index += 1;
+      }
+    }
+
+    setMessages(previous => [...previous, {role: 'user', text}]);
+    setQuestion('');
+    setSending(true);
+
+    try {
+      const now = new Date();
+      const today = [
+        now.getFullYear(),
+        String(now.getMonth() + 1).padStart(2, '0'),
+        String(now.getDate()).padStart(2, '0'),
+      ].join('-');
+      const {data, error} = await supabase.functions.invoke('campus-assistant', {
+        body: {question: text, history, today},
+      });
+
+      if (error) {
+        let message = error.message;
+        try {
+          const response = await error.context?.json();
+          if (typeof response?.error === 'string') message = response.error;
+        } catch {
+          // Keep the Functions client error when the response has no JSON body.
+        }
+        throw new Error(message);
+      }
+      if (typeof data?.answer !== 'string' || !data.answer.trim()) {
+        throw new Error('The campus assistant returned an empty answer. Please try again.');
+      }
+      setMessages(previous => [
+        ...previous,
+        {role: 'assistant', text: data.answer.trim()},
+      ]);
+    } catch (error) {
+      setMessages(previous => [
+        ...previous,
+        {
+          role: 'assistant',
+          text: error.message || 'Could not contact the campus assistant. Please try again.',
+          error: true,
+        },
+      ]);
+    } finally {
+      setSending(false);
+    }
+  };
+
+  const toggleVoiceInput = async () => {
+    if (voiceListening) {
+      await VoiceToText.stopListening().catch(() => setVoiceListening(false));
+      return;
+    }
+    if (sending) return;
+
+    try {
+      if (Platform.OS === 'android') {
+        const permission = await PermissionsAndroid.request(
+          PermissionsAndroid.PERMISSIONS.RECORD_AUDIO,
+          {
+            title: 'Allow voice input',
+            message: 'UniVents needs microphone access to transcribe your chatbot question.',
+            buttonPositive: 'Allow',
+            buttonNegative: 'Cancel',
+          },
+        );
+        if (permission !== PermissionsAndroid.RESULTS.GRANTED) {
+          Alert.alert('Microphone permission needed', 'Allow microphone access to dictate a chatbot question.');
+          return;
+        }
+      }
+
+      const available = await VoiceToText.isRecognitionAvailable();
+      if (!available) {
+        Alert.alert('Voice input unavailable', 'Speech recognition is not available on this device.');
+        return;
+      }
+
+      voiceBaseText.current = question.trim();
+      Keyboard.dismiss();
+      await VoiceToText.startListening();
+    } catch (error) {
+      setVoiceListening(false);
+      Alert.alert('Could not start voice input', error.message || 'Please try again.');
+    }
+  };
+
+  const showWelcome = messages.length === 0 && !keyboardVisible;
+
   return (
-    <Screen>
-      <View style={styles.header}>
-        <TouchableOpacity accessibilityRole="button" accessibilityLabel="Go back" onPress={() => navigation.goBack()} style={styles.back}>
-          <Icon name="arrow-back" size={21} color={colors.ink} />
-        </TouchableOpacity>
-        <View style={styles.headerCopy}>
-          <Text style={styles.subtitle}>YOUR CAMPUS ASSISTANT</Text>
-          <Text style={styles.title}>UniVents AI</Text>
-        </View>
-        <View style={styles.sparkle}><Icon name="sparkles" size={20} color={colors.primary} /></View>
+    <View style={styles.root}>
+      <LinearGradient
+        colors={['#E8E5FF', '#F4F5FC', colors.bg]}
+        locations={[0, 0.42, 1]}
+        style={StyleSheet.absoluteFill}
+      />
+      <View pointerEvents="none" style={StyleSheet.absoluteFill}>
+        <View style={styles.backgroundGlow} />
+        <View style={styles.backgroundOrb} />
       </View>
 
-      <View style={styles.welcomeWrap}>
-        <LinearGradient colors={['#F0EEFF', '#FBF9FF', '#FFF4EA']} start={{x: 0, y: 0}} end={{x: 1, y: 1}} style={styles.welcome}>
-          <View pointerEvents="none" style={styles.welcomeOrb} />
-          <View style={styles.welcomeCopy}>
-            <Text style={styles.welcomeTitle}>Your campus sidekick</Text>
-            <Text style={styles.welcomeText}>Events, notices, and campus plans? I’m all ears.</Text>
-          </View>
-          <View style={styles.welcomeTag}><View style={styles.onlineDot} /><Text style={styles.welcomeTagText}>Ready when you are</Text></View>
-        </LinearGradient>
-        <Animated.View style={[styles.mascot, {transform: [{translateY: mascotTranslate}]}]}>
-          <LinearGradient colors={['#6759E8', '#8E7AF3']} style={styles.mascotBody}>
-            <View style={styles.mascotAntenna}><View style={styles.antennaDot} /></View>
-            <View style={styles.mascotFace}>
-              <Animated.View style={[styles.mascotEye, {opacity: mascotWink, transform: [{scaleY: mascotWink}]}]} />
-              <View style={styles.mascotEye} />
-              <View style={styles.mascotSmile} />
+      <KeyboardAvoidingView
+        style={styles.keyboardFrame}
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
+        <View style={[styles.screen, {paddingTop: insets.top + 8, paddingBottom: Math.max(insets.bottom, 10)}]}>
+          <View style={styles.header}>
+            <TouchableOpacity
+              accessibilityRole="button"
+              accessibilityLabel="Go back"
+              onPress={() => navigation.goBack()}
+              style={styles.back}>
+              <Icon name="chevron-back" size={21} color={colors.primary} />
+            </TouchableOpacity>
+            <View style={styles.headerAvatar}>
+              <LinearGradient colors={['#6155E8', '#8B7CF8']} style={styles.headerAvatarGradient}>
+                <Icon name="sparkles" size={17} color="#fff" />
+              </LinearGradient>
             </View>
-            <View style={styles.mascotCheekLeft} />
-            <View style={styles.mascotCheekRight} />
-            <View style={styles.mascotBadge}><Icon name="sparkles" size={12} color="#FFD477" /></View>
-          </LinearGradient>
-        </Animated.View>
-        <View style={styles.chatBubble}>
-          <Icon name="sparkles" size={13} color={colors.primary} />
-          <Text style={styles.chatBubbleText}>Ask AI</Text>
-          <View style={styles.chatBubbleTail} />
+            <View style={styles.headerCopy}>
+              <Text style={styles.title}>UniVents AI</Text>
+              <Text style={styles.subtitle}>Your campus assistant</Text>
+            </View>
+            <View style={styles.headerStar} accessibilityLabel="AI assistant">
+              <Icon name="sparkles" size={18} color={colors.primary} />
+            </View>
+          </View>
+
+          <ScrollView
+            ref={messagesRef}
+            style={styles.conversation}
+            contentContainerStyle={styles.conversationContent}
+            showsVerticalScrollIndicator={false}
+            keyboardShouldPersistTaps="handled"
+            keyboardDismissMode={Platform.OS === 'ios' ? 'interactive' : 'on-drag'}
+            onContentSizeChange={scrollToLatest}>
+            {showWelcome ? (
+              <View style={styles.emptyState}>
+                <LinearGradient colors={['#F2F0FF', '#FFFFFF', '#FFF8F3']} style={styles.welcomeCard}>
+                  <View style={styles.welcomeTopline}>
+                    <View style={styles.welcomeIcon}>
+                      <Icon name="sparkles" size={16} color={colors.primary} />
+                    </View>
+                    <Text style={styles.welcomeEyebrow}>CAMPUS SIDEKICK</Text>
+                  </View>
+                  <Text style={styles.welcomeTitle}>What is happening on campus?</Text>
+                  <Text style={styles.welcomeText}>
+                    Ask about upcoming events, venues, dates, or what an event is about.
+                  </Text>
+                  <View style={styles.welcomeTag}>
+                    <Icon name="checkmark-circle" size={14} color={colors.success} />
+                    <Text style={styles.welcomeTagText}>Answers use approved campus events</Text>
+                  </View>
+                </LinearGradient>
+
+                <View style={styles.suggestionsHeading}>
+                  <Text style={styles.sectionLabel}>TRY ASKING</Text>
+                  <Icon name="arrow-down" size={15} color={colors.mute} />
+                </View>
+                <View style={styles.suggestions}>
+                  {suggestions.map(prompt => (
+                    <TouchableOpacity
+                      key={prompt}
+                      activeOpacity={0.78}
+                      style={styles.suggestion}
+                      onPress={() => {
+                        setQuestion(prompt);
+                        inputRef.current?.focus();
+                      }}>
+                      <Text style={styles.suggestionText}>{prompt}</Text>
+                      <View style={styles.suggestionArrow}>
+                        <Icon name="arrow-up" size={14} color={colors.primary} />
+                      </View>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+              </View>
+            ) : messages.length === 0 ? (
+              <Text style={styles.keyboardHint}>
+                Ask about events, dates, venues, or an event topic.
+              </Text>
+            ) : (
+              <View style={styles.messages}>
+                {messages.map((message, index) => (
+                  <View
+                    key={`${index}-${message.role}`}
+                    style={[styles.messageRow, message.role === 'user' && styles.userMessageRow]}>
+                    {message.role === 'assistant' && (
+                      <View style={[styles.messageAvatar, message.error && styles.errorAvatar]}>
+                        <Icon
+                          name={message.error ? 'alert-circle' : 'sparkles'}
+                          size={13}
+                          color={message.error ? colors.danger : colors.primary}
+                        />
+                      </View>
+                    )}
+                    <View
+                      style={[
+                        styles.message,
+                        message.role === 'user' ? styles.userMessage : styles.assistantMessage,
+                        message.error && styles.errorMessage,
+                      ]}>
+                      {message.role === 'assistant' && !message.error ? (
+                        <FormattedAnswer text={message.text} />
+                      ) : (
+                        <Text
+                          style={[
+                            styles.messageText,
+                            message.role === 'user' && styles.userMessageText,
+                            message.error && styles.errorText,
+                          ]}>
+                          {message.text}
+                        </Text>
+                      )}
+                    </View>
+                  </View>
+                ))}
+                {sending && (
+                  <View style={styles.messageRow}>
+                    <View style={styles.messageAvatar}>
+                      <Icon name="sparkles" size={13} color={colors.primary} />
+                    </View>
+                    <View style={[styles.message, styles.assistantMessage, styles.loadingMessage]}>
+                      <ActivityIndicator size="small" color={colors.primary} />
+                  <Text style={styles.loadingText}>Checking campus events...</Text>
+                    </View>
+                  </View>
+                )}
+              </View>
+            )}
+          </ScrollView>
+
+          <View style={styles.composerWrap}>
+            <View style={[styles.composer, question.length > 0 && styles.composerActive]}>
+              <TextInput
+                ref={inputRef}
+                value={question}
+                onChangeText={setQuestion}
+                onFocus={() => setKeyboardVisible(true)}
+                placeholder={voiceListening ? 'Listening... speak your question' : 'Ask about campus...'}
+                placeholderTextColor="#9298B0"
+                style={styles.input}
+                multiline
+                maxLength={1000}
+                returnKeyType="send"
+                submitBehavior="submit"
+                onSubmitEditing={sendQuestion}
+                editable={!sending}
+                accessibilityLabel="Ask UniVents AI a question"
+              />
+              <TouchableOpacity
+                accessibilityRole="button"
+                accessibilityLabel={voiceListening ? 'Stop voice input' : 'Speak your question'}
+                onPress={toggleVoiceInput}
+                disabled={sending}
+                style={[styles.mic, voiceListening && styles.micActive]}>
+                <Icon name={voiceListening ? 'stop' : 'mic-outline'} size={19} color={voiceListening ? '#fff' : colors.primary} />
+              </TouchableOpacity>
+              <TouchableOpacity
+                accessibilityRole="button"
+                accessibilityLabel="Send question"
+                onPress={sendQuestion}
+                disabled={sending || !question.trim()}
+                style={[styles.send, (sending || !question.trim()) && styles.sendDisabled]}>
+                {sending ? (
+                  <ActivityIndicator size="small" color="#fff" />
+                ) : (
+                  <Icon name="arrow-up" size={21} color="#fff" />
+                )}
+              </TouchableOpacity>
+            </View>
+            <Text style={styles.note}>UniVents AI - Campus events and helpful context</Text>
+          </View>
         </View>
-      </View>
-
-      <Text style={styles.sectionLabel}>TRY ASKING</Text>
-      <View style={styles.suggestions}>
-        {suggestions.map(prompt => (
-          <TouchableOpacity key={prompt} activeOpacity={0.8} style={styles.suggestion} onPress={() => setQuestion(prompt)}>
-            <Text style={styles.suggestionText}>{prompt}</Text>
-            <Icon name="arrow-up-outline" size={16} color={colors.primary} />
-          </TouchableOpacity>
-        ))}
-      </View>
-
-      <View style={styles.composer}>
-        <TextInput
-          value={question}
-          onChangeText={setQuestion}
-          placeholder="Type your question…"
-          placeholderTextColor="#989DB4"
-          style={styles.input}
-          multiline
-          returnKeyType="send"
-          onSubmitEditing={sendQuestion}
-        />
-        <TouchableOpacity accessibilityRole="button" accessibilityLabel="Send question" onPress={sendQuestion} style={styles.send}>
-          <Icon name="arrow-up" size={20} color="#fff" />
-        </TouchableOpacity>
-      </View>
-      <Text style={styles.note}>AI responses will be available when the chat service is connected.</Text>
-    </Screen>
+      </KeyboardAvoidingView>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
-  header: {flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 20},
-  back: {width: 42, height: 42, borderRadius: 14, backgroundColor: '#fff', alignItems: 'center', justifyContent: 'center', ...shadow, shadowOpacity: 0.08},
+  root: {flex: 1, backgroundColor: colors.bg},
+  keyboardFrame: {flex: 1},
+  screen: {flex: 1, paddingHorizontal: 16},
+  backgroundGlow: {position: 'absolute', top: 90, right: -100, width: 230, height: 230, borderRadius: 115, backgroundColor: 'rgba(195,188,255,0.24)'},
+  backgroundOrb: {position: 'absolute', bottom: 110, left: -125, width: 240, height: 240, borderRadius: 120, backgroundColor: 'rgba(180,239,229,0.19)'},
+  header: {flexDirection: 'row', alignItems: 'center', gap: 11, paddingBottom: 14, borderBottomWidth: 1, borderBottomColor: 'rgba(91,82,166,0.09)'},
+  back: {width: 42, height: 42, borderRadius: 15, backgroundColor: '#F0EEFF', borderWidth: 1, borderColor: '#E2DEFF', alignItems: 'center', justifyContent: 'center'},
+  headerAvatar: {width: 42, height: 42, borderRadius: 15, overflow: 'hidden', ...shadow, shadowOpacity: 0.12, elevation: 3},
+  headerAvatarGradient: {flex: 1, alignItems: 'center', justifyContent: 'center'},
   headerCopy: {flex: 1},
-  subtitle: {fontSize: 10, fontWeight: '800', letterSpacing: 1, color: colors.mute},
-  title: {fontSize: 24, fontWeight: '900', color: colors.ink, letterSpacing: -0.5},
-  sparkle: {width: 42, height: 42, borderRadius: 14, backgroundColor: colors.soft, alignItems: 'center', justifyContent: 'center'},
-  welcomeWrap: {position: 'relative', marginBottom: 24, paddingTop: 16, ...shadow, shadowOpacity: 0.09},
-  welcome: {borderRadius: 26, paddingHorizontal: 16, paddingTop: 62, paddingBottom: 14, overflow: 'hidden', borderWidth: 1, borderColor: '#E7E2FF'},
-  welcomeOrb: {position: 'absolute', width: 180, height: 180, borderRadius: 90, right: -75, top: -100, backgroundColor: 'rgba(110,94,245,0.09)'},
-  welcomeCopy: {backgroundColor: 'rgba(255,255,255,0.8)', borderWidth: 1, borderColor: '#EEEBFB', borderRadius: 18, paddingHorizontal: 13, paddingVertical: 11},
-  mascot: {position: 'absolute', left: 22, top: 0, zIndex: 2},
-  mascotBody: {width: 76, height: 76, borderRadius: 27, alignItems: 'center', justifyContent: 'center', shadowColor: '#5147D9', shadowOpacity: 0.25, shadowRadius: 12, shadowOffset: {width: 0, height: 7}, elevation: 7},
-  mascotAntenna: {position: 'absolute', width: 2, height: 11, backgroundColor: '#BDB5FF', top: -7, alignItems: 'center'},
-  antennaDot: {position: 'absolute', top: -5, width: 9, height: 9, borderRadius: 5, backgroundColor: '#FFB86B', borderWidth: 2, borderColor: '#fff'},
-  mascotFace: {flexDirection: 'row', alignItems: 'center', gap: 17, marginTop: 2},
-  mascotEye: {width: 6, height: 8, borderRadius: 5, backgroundColor: '#fff'},
-  mascotSmile: {position: 'absolute', width: 11, height: 6, borderBottomWidth: 2, borderColor: '#fff', borderRadius: 8, left: 20, top: 14},
-  mascotCheekLeft: {position: 'absolute', left: 14, top: 44, width: 8, height: 5, borderRadius: 4, backgroundColor: 'rgba(255,177,190,0.7)'},
-  mascotCheekRight: {position: 'absolute', right: 14, top: 44, width: 8, height: 5, borderRadius: 4, backgroundColor: 'rgba(255,177,190,0.7)'},
-  mascotBadge: {position: 'absolute', right: -5, top: -5, width: 27, height: 27, borderRadius: 10, backgroundColor: '#fff', alignItems: 'center', justifyContent: 'center', ...shadow, shadowOpacity: 0.1},
-  chatBubble: {position: 'absolute', top: 9, left: 91, zIndex: 3, flexDirection: 'row', alignItems: 'center', gap: 5, backgroundColor: '#fff', borderRadius: 14, paddingHorizontal: 11, paddingVertical: 8, borderWidth: 1, borderColor: '#EFECFA', ...shadow, shadowOpacity: 0.08},
-  chatBubbleTail: {position: 'absolute', left: 10, bottom: -4, width: 8, height: 8, backgroundColor: '#fff', borderRightWidth: 1, borderBottomWidth: 1, borderColor: '#EFECFA', transform: [{rotate: '45deg'}]},
-  chatBubbleText: {fontSize: 12, fontWeight: '900', color: colors.primary},
-  welcomeTitle: {fontSize: 17, fontWeight: '900', color: colors.ink},
-  welcomeText: {fontSize: 12, lineHeight: 18, color: colors.mute, marginTop: 3},
-  welcomeTag: {flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 9, marginLeft: 3},
-  onlineDot: {width: 6, height: 6, borderRadius: 3, backgroundColor: '#13B981'},
+  title: {fontSize: 18, fontWeight: '900', color: colors.ink, letterSpacing: -0.35},
+  subtitle: {fontSize: 11, fontWeight: '600', color: colors.mute, marginTop: 2},
+  headerStar: {width: 38, height: 38, borderRadius: 14, backgroundColor: '#F0EEFF', borderWidth: 1, borderColor: '#E2DEFF', alignItems: 'center', justifyContent: 'center'},
+  conversation: {flex: 1},
+  conversationContent: {flexGrow: 1, paddingTop: 18, paddingBottom: 16},
+  emptyState: {flex: 1},
+  welcomeCard: {borderRadius: 25, padding: 19, borderWidth: 1, borderColor: '#E4E0FF', overflow: 'hidden', ...shadow, shadowOpacity: 0.08, shadowRadius: 12, elevation: 3},
+  welcomeTopline: {flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 14},
+  welcomeIcon: {width: 29, height: 29, borderRadius: 10, backgroundColor: '#EAE7FF', alignItems: 'center', justifyContent: 'center'},
+  welcomeEyebrow: {fontSize: 10, fontWeight: '900', letterSpacing: 1.15, color: colors.primary},
+  welcomeTitle: {fontSize: 21, lineHeight: 27, fontWeight: '900', color: colors.ink, letterSpacing: -0.5},
+  welcomeText: {fontSize: 13, lineHeight: 19, color: colors.mute, marginTop: 7},
+  welcomeTag: {flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 16},
   welcomeTagText: {fontSize: 10, fontWeight: '700', color: colors.mute},
-  sectionLabel: {fontSize: 11, fontWeight: '900', letterSpacing: 1, color: colors.mute, marginBottom: 10},
+  suggestionsHeading: {flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 25, marginBottom: 10, paddingHorizontal: 2},
+  sectionLabel: {fontSize: 10, fontWeight: '900', letterSpacing: 1.15, color: colors.mute},
   suggestions: {gap: 9},
-  suggestion: {flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 10, backgroundColor: '#fff', borderWidth: 1, borderColor: colors.line, borderRadius: 15, paddingHorizontal: 14, paddingVertical: 13},
+  suggestion: {minHeight: 51, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 10, backgroundColor: 'rgba(255,255,255,0.94)', borderWidth: 1, borderColor: 'rgba(104,94,185,0.12)', borderRadius: 16, paddingHorizontal: 14, paddingVertical: 10},
   suggestionText: {flex: 1, color: colors.ink, fontSize: 13, fontWeight: '700'},
-  composer: {flexDirection: 'row', alignItems: 'flex-end', gap: 10, backgroundColor: '#fff', borderWidth: 1, borderColor: '#DED9FF', borderRadius: 19, padding: 9, marginTop: 24, ...shadow, shadowOpacity: 0.08},
-  input: {flex: 1, minHeight: 42, maxHeight: 110, paddingHorizontal: 8, paddingTop: 11, paddingBottom: 9, fontSize: 14, color: colors.ink},
-  send: {width: 40, height: 40, borderRadius: 14, backgroundColor: colors.primary, alignItems: 'center', justifyContent: 'center'},
-  note: {fontSize: 11, lineHeight: 16, color: colors.mute, textAlign: 'center', marginTop: 10},
+  suggestionArrow: {width: 29, height: 29, borderRadius: 10, backgroundColor: colors.soft, alignItems: 'center', justifyContent: 'center'},
+  keyboardHint: {fontSize: 12, color: colors.mute, textAlign: 'center', marginTop: 10},
+  messages: {gap: 15, paddingBottom: 8},
+  messageRow: {flexDirection: 'row', alignItems: 'flex-end', gap: 7},
+  userMessageRow: {justifyContent: 'flex-end'},
+  messageAvatar: {width: 25, height: 25, borderRadius: 9, backgroundColor: '#EAE7FF', alignItems: 'center', justifyContent: 'center', marginBottom: 2},
+  errorAvatar: {backgroundColor: '#FFF0ED'},
+  message: {maxWidth: '84%', borderRadius: 19, paddingHorizontal: 14, paddingVertical: 11},
+  userMessage: {backgroundColor: colors.primary, borderBottomRightRadius: 6},
+  assistantMessage: {backgroundColor: '#fff', borderWidth: 1, borderColor: 'rgba(103,93,177,0.12)', borderBottomLeftRadius: 6, ...shadow, shadowOpacity: 0.04, shadowRadius: 8, elevation: 1},
+  messageText: {flexShrink: 1, color: colors.ink, fontSize: 14, lineHeight: 21},
+  answerContent: {gap: 9},
+  answerHeading: {fontSize: 14, lineHeight: 20, fontWeight: '800', color: colors.ink},
+  answerParagraph: {flexShrink: 1, fontSize: 13, lineHeight: 20, color: colors.ink},
+  answerStrong: {fontWeight: '800', color: colors.ink},
+  answerListRow: {flexDirection: 'row', alignItems: 'flex-start', gap: 8},
+  answerBullet: {width: 6, height: 6, borderRadius: 3, backgroundColor: colors.primary, marginTop: 7},
+  answerNumber: {minWidth: 18, fontSize: 13, lineHeight: 20, fontWeight: '800', color: colors.primary},
+  userMessageText: {color: '#fff'},
+  errorMessage: {borderColor: '#F4C7C0', backgroundColor: '#FFF7F5'},
+  errorText: {color: colors.danger},
+  loadingMessage: {flexDirection: 'row', alignItems: 'center', gap: 9},
+  loadingText: {fontSize: 12, color: colors.mute},
+  composerWrap: {paddingTop: 10},
+  composer: {minHeight: 58, flexDirection: 'row', alignItems: 'flex-end', gap: 9, backgroundColor: '#fff', borderWidth: 1, borderColor: '#E0DDF3', borderRadius: 21, padding: 8, ...shadow, shadowOpacity: 0.09, shadowRadius: 12, elevation: 4},
+  composerActive: {borderColor: '#A9A1F6'},
+  input: {flex: 1, minHeight: 40, maxHeight: 108, paddingHorizontal: 9, paddingTop: 10, paddingBottom: 9, fontSize: 14, lineHeight: 20, color: colors.ink},
+  send: {width: 42, height: 42, borderRadius: 15, backgroundColor: colors.primary, alignItems: 'center', justifyContent: 'center'},
+  mic: {width: 42, height: 42, borderRadius: 15, backgroundColor: '#F0EEFF', borderWidth: 1, borderColor: '#E2DEFF', alignItems: 'center', justifyContent: 'center'},
+  micActive: {backgroundColor: colors.danger, borderColor: colors.danger},
+  sendDisabled: {opacity: 0.43},
+  note: {fontSize: 10, lineHeight: 14, color: colors.mute, textAlign: 'center', marginTop: 8},
 });

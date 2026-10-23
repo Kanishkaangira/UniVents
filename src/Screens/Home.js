@@ -143,7 +143,7 @@ export default function Home({navigation}) {
             </View>
             <Icon name="sparkles" size={19} color="#8B7CF8" />
           </View>
-          <Text style={styles.userGreetingHint}>Your campus day starts here. What will you discover?</Text>
+          <Text style={styles.userGreetingHint}>Stay in the loop with campus events, notices, and plans for your day.</Text>
         </View>
 
         {loading && !events.length && <ActivityIndicator color={colors.primary} style={styles.loadingIndicator} />}
@@ -157,6 +157,7 @@ export default function Home({navigation}) {
             </View>
             <Text style={styles.heroTitle}>{live.title}</Text>
             <Text style={styles.heroSub}>{live.org} · {live.venue} · {live.time}</Text>
+            <Text style={styles.heroDescription}>Join the campus community and see what is happening right now.</Text>
             <TouchableOpacity style={styles.heroBtn} onPress={() => setSelected(live)}>
               <Text style={styles.heroBtnTxt}>View details</Text>
             </TouchableOpacity>
@@ -199,7 +200,7 @@ export default function Home({navigation}) {
                   <Text style={styles.summaryNumber}>{upcomingEvents.length}</Text>
                   <Text style={styles.summaryUnit}>events</Text>
                 </View>
-                <Text style={styles.summaryCaption}>Find your next campus moment</Text>
+                <Text style={styles.summaryCaption}>Explore what is coming up on campus.</Text>
               </View>
             </Animated.View>
           </TouchableOpacity>
@@ -239,7 +240,7 @@ export default function Home({navigation}) {
                   <Text style={styles.summaryNumber}>{registeredEvents.length}</Text>
                   <Text style={styles.summaryUnit}>registered</Text>
                 </View>
-                <Text style={styles.summaryCaption}>Your campus plans in one place</Text>
+                <Text style={styles.summaryCaption}>Keep track of the events you signed up for.</Text>
               </View>
             </Animated.View>
           </TouchableOpacity>
@@ -271,11 +272,12 @@ export default function Home({navigation}) {
             </Animated.View>
             <View style={styles.aiChatContent}>
               <View style={styles.aiPromptHeader}><View style={styles.aiOnlineDot} /><Text style={styles.aiPromptEyebrow}>YOUR CAMPUS AI</Text></View>
-              <Text style={styles.aiTitle}>What’s happening?</Text>
+              <Text style={styles.aiTitle}>Your campus, answered</Text>
+              <Text style={styles.aiDescription}>Ask about events, venues, notices, or what to expect at an event.</Text>
               <View style={styles.aiComposerPreview}>
                 <Icon name="chatbubble-ellipses-outline" size={15} color="#85819B" />
                 <Text numberOfLines={1} style={styles.aiPlaceholder}>
-                  Ask about campus events<Animated.Text style={[styles.aiTypingCursor, {opacity: typingCursorMotion}]}>|</Animated.Text>
+                  Try “What events are coming up?”<Animated.Text style={[styles.aiTypingCursor, {opacity: typingCursorMotion}]}>|</Animated.Text>
                 </Text>
                 <View pointerEvents="none" style={styles.aiSendPreview}>
                   <Icon name="arrow-up" size={15} color="#fff" />
@@ -286,7 +288,10 @@ export default function Home({navigation}) {
           </Animated.View>
         </TouchableOpacity>
 
-        <SectionHeader title="Calendar" />
+        <View style={styles.sectionIntro}>
+          <SectionHeader title="Explore the calendar" />
+          <Text style={styles.sectionDescription}>Browse the month and tap a date to see what’s planned.</Text>
+        </View>
         <MiniCalendar
           year={cursor.year}
           month={cursor.month}
@@ -298,13 +303,22 @@ export default function Home({navigation}) {
           onNext={() => move(1)}
         />
 
-        <SectionHeader title={isThisMonth && day === now.getDate() ? 'Today' : `${day} ${['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'][cursor.month]}`} note={`${dayEvents.length} event${dayEvents.length === 1 ? '' : 's'}`} />
+        <View style={styles.daySectionHeading}>
+          <View style={styles.dayHeadingCopy}>
+            <SectionHeader title={isThisMonth && day === now.getDate() ? 'Today on campus' : `Events for ${day} ${['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'][cursor.month]}`} note={`${dayEvents.length} event${dayEvents.length === 1 ? '' : 's'}`} />
+            <Text style={styles.sectionDescription}>{dayEvents.length ? 'Here’s what you can look forward to on this date.' : 'Choose another date to discover more campus activities.'}</Text>
+          </View>
+        </View>
         {dayEvents.length ? (
           dayEvents.map(item => (
             <EventCard key={item.id} item={item} large saved={!!saved[item.id]} onToggleSave={() => toggleSave(item.id)} onPress={() => setSelected(item)} />
           ))
         ) : (
-          <View style={styles.empty}><Text style={styles.emptyTxt}>No events on this day 🎉</Text></View>
+          <View style={styles.empty}>
+            <View style={styles.emptyIcon}><Icon name="calendar-clear-outline" size={20} color={colors.primary} /></View>
+            <Text style={styles.emptyTitle}>A little breathing room</Text>
+            <Text style={styles.emptyTxt}>There are no events on this date. Pick another day on the calendar to explore what’s happening.</Text>
+          </View>
         )}
       </Screen>
 
@@ -320,6 +334,10 @@ const styles = StyleSheet.create({
   userGreetingLabel: {fontSize: 13, lineHeight: 17, fontWeight: '700', color: colors.primary, letterSpacing: 0.1},
   userGreetingName: {fontSize: 27, lineHeight: 33, fontWeight: '900', color: colors.ink, letterSpacing: -0.9, marginTop: 1},
   userGreetingHint: {fontSize: 10.5, lineHeight: 15, fontWeight: '600', color: colors.mute, marginTop: 7},
+  sectionIntro: {marginTop: 1},
+  sectionDescription: {fontSize: 12, lineHeight: 17, fontWeight: '500', color: colors.mute, marginTop: -7, marginBottom: 12, paddingHorizontal: 1},
+  daySectionHeading: {marginTop: 2},
+  dayHeadingCopy: {width: '100%'},
   loadingIndicator: {marginVertical: 20},
   hero: {borderRadius: 26, padding: 20, marginBottom: 20, overflow: 'hidden', ...shadow, shadowColor: colors.primary, shadowOpacity: 0.35},
   circle: {position: 'absolute', width: 150, height: 150, borderRadius: 75, backgroundColor: 'rgba(255,255,255,0.13)', right: -40, top: -40},
@@ -330,6 +348,7 @@ const styles = StyleSheet.create({
   liveTxt: {color: '#fff', fontSize: 11, fontWeight: '700'},
   heroTitle: {color: '#fff', fontSize: 22, fontWeight: '800', marginTop: 14, marginBottom: 4},
   heroSub: {color: 'rgba(255,255,255,0.92)', fontSize: 13, marginBottom: 16},
+  heroDescription: {color: 'rgba(255,255,255,0.88)', fontSize: 12, lineHeight: 17, fontWeight: '500', maxWidth: 280, marginTop: -8, marginBottom: 14},
   heroBtn: {alignSelf: 'flex-start', backgroundColor: '#fff', paddingHorizontal: 18, paddingVertical: 10, borderRadius: 14},
   heroBtnTxt: {color: colors.primary, fontSize: 13, fontWeight: '800'},
   campusStats: {flexDirection: 'row', alignItems: 'stretch', gap: 11, marginBottom: 17, paddingVertical: 7},
@@ -344,11 +363,11 @@ const styles = StyleSheet.create({
   summaryDetails: {alignItems: 'flex-start'},
   summaryCountLine: {flexDirection: 'row', alignItems: 'baseline', gap: 5},
   summaryNumber: {fontSize: 28, lineHeight: 31, fontWeight: '900', letterSpacing: -0.9, color: '#fff'},
-  summaryUnit: {fontSize: 9, fontWeight: '700', color: 'rgba(255,255,255,0.82)'},
-  summaryLabel: {fontSize: 8, lineHeight: 11, fontWeight: '900', letterSpacing: 1.1, color: 'rgba(255,255,255,0.88)'},
-  summaryCaption: {fontSize: 8, lineHeight: 11, fontWeight: '600', marginTop: 1, color: 'rgba(255,255,255,0.8)'},
+  summaryUnit: {fontSize: 10, fontWeight: '700', color: 'rgba(255,255,255,0.86)'},
+  summaryLabel: {fontSize: 9, lineHeight: 12, fontWeight: '900', letterSpacing: 1.1, color: 'rgba(255,255,255,0.9)'},
+  summaryCaption: {fontSize: 10, lineHeight: 14, fontWeight: '600', marginTop: 2, color: 'rgba(255,255,255,0.86)'},
   aiPromptTouch: {borderRadius: 22, marginBottom: 22},
-  aiPrompt: {minHeight: 120, flexDirection: 'row', alignItems: 'center', gap: 11, overflow: 'hidden', backgroundColor: '#FFFDF9', borderWidth: 1, borderColor: '#E8E3FF', borderRadius: 22, paddingHorizontal: 14, paddingVertical: 12, ...shadow, shadowColor: '#5147D9', shadowOpacity: 0.1, shadowRadius: 11, shadowOffset: {width: 0, height: 4}, elevation: 3},
+  aiPrompt: {minHeight: 148, flexDirection: 'row', alignItems: 'center', gap: 11, overflow: 'hidden', backgroundColor: '#FFFDF9', borderWidth: 1, borderColor: '#E8E3FF', borderRadius: 22, paddingHorizontal: 14, paddingVertical: 15, ...shadow, shadowColor: '#5147D9', shadowOpacity: 0.1, shadowRadius: 11, shadowOffset: {width: 0, height: 4}, elevation: 3},
   aiBackdropOrb: {position: 'absolute', width: 155, height: 155, borderRadius: 78, top: -100, right: -48, borderWidth: 1, borderColor: 'rgba(116,99,225,0.12)', backgroundColor: 'rgba(116,99,225,0.045)'},
   aiMascotWrap: {width: 54, height: 58, alignItems: 'center', justifyContent: 'center'},
   aiMascotBody: {width: 48, height: 48, borderRadius: 18, alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: 'rgba(255,255,255,0.55)', shadowColor: '#181044', shadowOpacity: 0.25, shadowRadius: 8, shadowOffset: {width: 0, height: 4}, elevation: 4},
@@ -360,16 +379,19 @@ const styles = StyleSheet.create({
   aiMascotCheekLeft: {position: 'absolute', left: 8, top: 27, width: 6, height: 4, borderRadius: 3, backgroundColor: 'rgba(255,177,190,0.7)'},
   aiMascotCheekRight: {position: 'absolute', right: 8, top: 27, width: 6, height: 4, borderRadius: 3, backgroundColor: 'rgba(255,177,190,0.7)'},
   aiMascotBadge: {position: 'absolute', right: -5, top: -5, width: 19, height: 19, borderRadius: 7, backgroundColor: '#fff', alignItems: 'center', justifyContent: 'center', ...shadow, shadowOpacity: 0.08},
-  aiChatContent: {flex: 1, alignItems: 'stretch', gap: 3},
+  aiChatContent: {flex: 1, alignItems: 'stretch', gap: 3, paddingVertical: 2},
   aiPromptHeader: {flexDirection: 'row', alignItems: 'center', gap: 5, marginBottom: 1},
   aiOnlineDot: {width: 6, height: 6, borderRadius: 3, backgroundColor: '#63F2BC'},
   aiPromptEyebrow: {fontSize: 8, fontWeight: '900', letterSpacing: 1, color: colors.primary},
   aiTitle: {fontSize: 16, lineHeight: 20, fontWeight: '900', letterSpacing: -0.3, color: colors.ink},
+  aiDescription: {fontSize: 11, lineHeight: 15, fontWeight: '500', color: colors.mute, marginTop: 1},
   aiComposerPreview: {minHeight: 40, flexDirection: 'row', alignItems: 'center', gap: 7, marginTop: 6, paddingLeft: 10, paddingRight: 5, paddingVertical: 4, backgroundColor: '#fff', borderWidth: 1, borderColor: '#DDD8F2', borderRadius: 13, shadowColor: '#5648B0', shadowOpacity: 0.05, shadowRadius: 4, shadowOffset: {width: 0, height: 2}, elevation: 1},
-  aiPlaceholder: {flex: 1, minWidth: 0, fontSize: 9, fontWeight: '600', color: '#85819B'},
+  aiPlaceholder: {flex: 1, minWidth: 0, fontSize: 10, fontWeight: '600', color: '#85819B'},
   aiTypingCursor: {fontSize: 12, lineHeight: 14, fontWeight: '500', color: colors.primary},
   aiSendPreview: {width: 30, height: 30, flexShrink: 0, borderRadius: 15, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.primary},
   aiSparkle: {position: 'absolute', top: 15, right: 17},
-  empty: {backgroundColor: '#fff', borderRadius: 18, padding: 18, alignItems: 'center'},
-  emptyTxt: {color: colors.mute, fontWeight: '600'},
+  empty: {backgroundColor: '#fff', borderWidth: 1, borderColor: '#E7E5F2', borderRadius: 20, paddingHorizontal: 22, paddingVertical: 24, alignItems: 'center', ...shadow, shadowColor: '#4A4775', shadowOpacity: 0.06, shadowRadius: 10, shadowOffset: {width: 0, height: 3}, elevation: 2},
+  emptyIcon: {width: 44, height: 44, borderRadius: 15, backgroundColor: '#EEECFF', alignItems: 'center', justifyContent: 'center', marginBottom: 11},
+  emptyTitle: {color: colors.ink, fontSize: 15, fontWeight: '800', marginBottom: 5},
+  emptyTxt: {color: colors.mute, fontSize: 12, lineHeight: 18, fontWeight: '500', textAlign: 'center'},
 });

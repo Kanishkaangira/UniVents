@@ -24,6 +24,7 @@ export default function Events() {
             key={item.id}
             item={item}
             large
+            dense
             saved={!!saved[item.id]}
             onToggleSave={() => toggleSave(item.id)}
             onPress={() => setSelected(item)}
