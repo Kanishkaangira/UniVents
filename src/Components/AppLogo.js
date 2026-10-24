@@ -1,16 +1,23 @@
 import React from 'react';
-import {Text, View} from 'react-native';
-import LinearGradient from 'react-native-linear-gradient';
+import {Image} from 'react-native';
 
-export default function AppLogo({size = 44}) {
+const logoSource = require('../assets/logo.png');
+
+export default function AppLogo({size = 44, style}) {
   return (
-    <LinearGradient
-      colors={['#4338CA', '#A78BFA']}
-      start={{x: 0, y: 0}}
-      end={{x: 1, y: 1}}
-      style={{width: size, height: size, borderRadius: size * 0.3, alignItems: 'center', justifyContent: 'center'}}>
-      <Text style={{color: '#fff', fontSize: size * 0.55, fontWeight: '800'}}>U</Text>
-      <View style={{position: 'absolute', top: size * 0.12, right: size * 0.14, width: size * 0.14, height: size * 0.14, borderRadius: 99, backgroundColor: '#FFB36B'}} />
-    </LinearGradient>
+    <Image
+      source={logoSource}
+      style={[
+        {
+          width: size,
+          height: size,
+        },
+        style,
+      ]}
+      resizeMode="contain"
+      accessibilityRole="image"
+      accessibilityLabel="UniVents Logo"
+    />
   );
 }
+
