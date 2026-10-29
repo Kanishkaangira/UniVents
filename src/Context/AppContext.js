@@ -196,6 +196,7 @@ export function AppProvider({children}) {
         }
         return api.signOut();
       },
+      deleteAccount: () => api.deleteMyAccount(),
       saveProfile: async fields => setProfile(await api.updateMyProfile(fields)),
       completeProfile: async fields => {
         const created = await api.createMyProfile(fields);

@@ -14,10 +14,12 @@ import {useApp} from '../Context/AppContext';
 const SEMESTER_OPTIONS = Array.from({length: 8}, (_, index) => String(index + 1));
 
 export default function Profile({navigation}) {
-  const {session, profile, myDepartment, mySkillFaculty, saveProfile, signOut, refreshing, refresh} = useApp();
-  const [sheet, setSheet] = useState(null); // 'edit' | 'about' | 'logout' | null
+  const {session, profile, myDepartment, mySkillFaculty, saveProfile, signOut, deleteAccount, refreshing, refresh} = useApp();
+  const [sheet, setSheet] = useState(null); // 'edit' | 'about' | 'logout' | 'delete' | null
   const [draft, setDraft] = useState({});
   const [saving, setSaving] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const [deleteConfirmation, setDeleteConfirmation] = useState('');
 
   const logOut = async () => {
     const {error} = await signOut();
@@ -25,17 +27,46 @@ export default function Profile({navigation}) {
     else setSheet(null);
   };
 
+  const deleteMyAccount = async () => {
+    if (deleteConfirmation.trim() !== 'DELETE' || deleting) return;
+    setDeleting(true);
+    try {
+      await deleteAccount();
+      setSheet(null);
+      setDeleteConfirmation('');
+    } catch (error) {
+      Alert.alert('Could not delete account', error.message || 'Please try again.');
+    } finally {
+      setDeleting(false);
+    }
+  };
+
   if (!profile) {
     return (
-      <Screen refreshing={refreshing} onRefresh={refresh}>
-        <ScreenHeader title="Profile" subtitle={session ? 'Your account' : 'Signed out'} />
-        <Text style={styles.about}>
-          {session
-            ? `No profile found for ${session.user.email || 'this account'}. Ask the university admin to create one.`
-            : 'You are signed out. You can keep browsing the app.'}
-        </Text>
-        {session && <PrimaryButton label="Log out" variant="danger" onPress={logOut} />}
-      </Screen>
+      <>
+        <Screen refreshing={refreshing} onRefresh={refresh}>
+          <ScreenHeader title="Profile" subtitle={session ? 'Your account' : 'Signed out'} />
+          <Text style={styles.about}>
+            {session
+              ? `No profile found for ${session.user.email || 'this account'}. Ask the university admin to create one.`
+              : 'You are signed out. You can keep browsing the app.'}
+          </Text>
+          {session && <PrimaryButton label="Log out" variant="danger" onPress={logOut} />}
+          {session && (
+            <View style={styles.dangerMenu}>
+              <MenuItem icon="trash-outline" label="Delete account" danger onPress={() => { setDeleteConfirmation(''); setSheet('delete'); }} />
+            </View>
+          )}
+        </Screen>
+        <DeleteAccountSheet
+          visible={!!session && sheet === 'delete'}
+          deleting={deleting}
+          confirmation={deleteConfirmation}
+          onChangeConfirmation={setDeleteConfirmation}
+          onDelete={deleteMyAccount}
+          onClose={() => { if (!deleting) { setSheet(null); setDeleteConfirmation(''); } }}
+        />
+      </>
     );
   }
 
@@ -98,6 +129,9 @@ export default function Profile({navigation}) {
           <MenuItem icon="information-circle-outline" label="About the app" onPress={() => setSheet('about')} />
           <MenuItem icon="log-out-outline" label="Log out" danger onPress={() => setSheet('logout')} />
         </View>
+        <View style={styles.dangerMenu}>
+          <MenuItem icon="trash-outline" label="Delete account" danger onPress={() => { setDeleteConfirmation(''); setSheet('delete'); }} />
+        </View>
       </Screen>
 
       {/* Edit profile */}
@@ -147,6 +181,16 @@ export default function Profile({navigation}) {
         <PrimaryButton label="Close" variant="soft" onPress={() => setSheet(null)} />
       </BottomSheet>
 
+      {/* Delete account */}
+      <DeleteAccountSheet
+        visible={sheet === 'delete'}
+        deleting={deleting}
+        confirmation={deleteConfirmation}
+        onChangeConfirmation={setDeleteConfirmation}
+        onDelete={deleteMyAccount}
+        onClose={() => { if (!deleting) { setSheet(null); setDeleteConfirmation(''); } }}
+      />
+
       {/* Logout confirm */}
       <BottomSheet visible={sheet === 'logout'} onClose={() => setSheet(null)}>
         <Text style={styles.sheetTitle}>Log out?</Text>
@@ -155,6 +199,42 @@ export default function Profile({navigation}) {
         <PrimaryButton label="Cancel" variant="soft" onPress={() => setSheet(null)} style={{marginTop: 8}} />
       </BottomSheet>
     </>
+  );
+}
+
+function DeleteAccountSheet({visible, deleting, confirmation, onChangeConfirmation, onDelete, onClose}) {
+  return (
+    <BottomSheet visible={visible} onClose={onClose}>
+      <Text style={styles.sheetTitle}>Delete your account?</Text>
+      <Text style={styles.about}>
+        This permanently deletes your account and profile, event registrations, notification device tokens, and administrator access. Events and notices you created may remain available with the creator account link removed; organizer details entered in the post may remain visible. This action cannot be undone.
+      </Text>
+      <Text style={styles.label}>Type DELETE to confirm</Text>
+      <TextInput
+        style={styles.input}
+        value={confirmation}
+        onChangeText={onChangeConfirmation}
+        placeholder="DELETE"
+        placeholderTextColor={colors.mute}
+        autoCapitalize="characters"
+        autoCorrect={false}
+        editable={!deleting}
+      />
+      <PrimaryButton
+        label={deleting ? 'Deleting account…' : 'Permanently delete account'}
+        variant="danger"
+        onPress={onDelete}
+        disabled={deleting || confirmation.trim() !== 'DELETE'}
+        style={styles.saveButton}
+      />
+      <PrimaryButton
+        label="Cancel"
+        variant="soft"
+        onPress={onClose}
+        disabled={deleting}
+        style={{marginTop: 8}}
+      />
+    </BottomSheet>
   );
 }
 
@@ -218,6 +298,7 @@ const styles = StyleSheet.create({
   email: {fontSize: 12, fontWeight: '600', color: 'rgba(255,255,255,0.9)', marginTop: 3, marginBottom: 9},
   pill: {fontSize: 10, fontWeight: '800', color: '#fff', backgroundColor: 'rgba(255,255,255,0.2)', paddingHorizontal: 10, paddingVertical: 4, borderRadius: 99, overflow: 'hidden'},
   menu: {backgroundColor: '#fff', borderRadius: 22, overflow: 'hidden', ...shadow, shadowOpacity: 0.08},
+  dangerMenu: {backgroundColor: '#fff', borderRadius: 18, overflow: 'hidden', borderWidth: 1, borderColor: '#FFE1DC', marginTop: 14, ...shadow, shadowOpacity: 0.05},
   sheetTitle: {fontSize: 20, fontWeight: '800', color: colors.ink, marginBottom: 6},
   editHeading: {flexDirection: 'row', alignItems: 'center', marginBottom: 8},
   editHeadingIcon: {width: 42, height: 42, borderRadius: 14, backgroundColor: colors.soft, alignItems: 'center', justifyContent: 'center', marginRight: 12},

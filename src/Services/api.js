@@ -113,4 +113,22 @@ export const verifyPasswordResetOtp = (email, token) =>
 export const updatePassword = password =>
   supabase.auth.updateUser({password});
 
+export const deleteMyAccount = async () => {
+  const {data, error} = await supabase.functions.invoke('delete-account', {body: {}});
+  if (error) {
+    let message = error.message || 'Could not delete your account.';
+    try {
+      const response = await error.context?.json();
+      if (typeof response?.error === 'string') message = response.error;
+    } catch {
+      // Keep the Functions client error when the response has no JSON body.
+    }
+    throw new Error(message);
+  }
+
+  const {error: signOutError} = await supabase.auth.signOut({scope: 'local'});
+  if (signOutError) throw new Error(signOutError.message);
+  return data;
+};
+
 export const signOut = () => supabase.auth.signOut();
