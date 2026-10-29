@@ -85,6 +85,14 @@ android {
     buildToolsVersion rootProject.ext.buildToolsVersion
     compileSdk rootProject.ext.compileSdkVersion
 
+    if (System.getProperty("os.name").toLowerCase().contains("windows")) {
+        externalNativeBuild {
+            cmake {
+                buildStagingDirectory new File(System.getenv("LOCALAPPDATA") ?: System.getProperty("java.io.tmpdir"), "UniVents/android-build/app-cxx")
+            }
+        }
+    }
+
     namespace "com.univents"
     defaultConfig {
         applicationId "com.univents"

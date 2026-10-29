@@ -25,6 +25,10 @@ subprojects { subproject ->
     // The Windows NDK and Gradle transform cache can expose shared libraries
     // as hard links. Gradle 9.4 cannot snapshot those files as CMake outputs.
     if (System.getProperty("os.name").toLowerCase().contains("windows")) {
+        if (subproject.name == "react-native-screens") {
+            def localBuildRoot = new File(System.getenv("LOCALAPPDATA") ?: System.getProperty("java.io.tmpdir"), "UniVents/android-build/react-native-screens")
+            subproject.layout.buildDirectory.set(localBuildRoot)
+        }
         subproject.tasks.configureEach { task ->
             if (task.name == "generateCodegenArtifactsFromSchema" || task.name.startsWith("buildCMakeDebug")) {
                 task.doNotTrackState("Gradle cannot snapshot generated or native linked files on Windows.")
