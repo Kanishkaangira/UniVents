@@ -28,6 +28,8 @@ build/
 .idea
 .gradle
 android/.gradle-user/
+android/keystore.properties
+android/app/univents-upload.keystore
 local.properties
 *.iml
 *.hprof

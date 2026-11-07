@@ -36,7 +36,7 @@ export const createMyProfile = async fields => {
 
   return supabase
     .from('profiles')
-    .insert({id: data.user.id, email: data.user.email, ...fields})
+    .insert({...fields, id: data.user.id, email: data.user.email})
     .select('*')
     .single()
     .then(check);
@@ -94,9 +94,6 @@ export const registerForEvent = eventId =>
 
 export const signInWithEmail = (email, password) =>
   supabase.auth.signInWithPassword({email, password});
-
-export const isEmailRegistered = email =>
-  supabase.rpc('email_is_registered', {p_email: email});
 
 export const requestEmailOnlyOtp = email =>
   supabase.auth.signInWithOtp({email, options: {shouldCreateUser: true}});

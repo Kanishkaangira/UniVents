@@ -15,7 +15,6 @@
     "@react-native-async-storage/async-storage": "^3.1.1",
     "@react-native-firebase/app": "^27.0.0",
     "@react-native-firebase/messaging": "^27.0.0",
-    "@react-native/new-app-screen": "0.87.1",
     "@react-navigation/bottom-tabs": "^7.19.2",
     "@react-navigation/native": "^7.4.1",
     "@react-navigation/native-stack": "^7.19.2",

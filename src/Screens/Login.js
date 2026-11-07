@@ -7,7 +7,7 @@ import {UNIVERSITY_EMAIL_DOMAIN} from '../Constants/env';
 import {isUniversityEmail} from '../Services/emailRules';
 import {colors, shadow} from '../Constants/theme';
 import {useApp} from '../Context/AppContext';
-import {isEmailRegistered, requestPasswordResetOtp, signOut, updatePassword, verifyPasswordResetOtp} from '../Services/api';
+import {requestPasswordResetOtp, signOut, updatePassword, verifyPasswordResetOtp} from '../Services/api';
 
 export default function Login() {
   const {signIn, requestEmailOnlyOtp, verifyEmailOtp} = useApp();
@@ -133,15 +133,6 @@ export default function Login() {
         setConfirmPassword('');
         setMessage('Password reset. Sign in with your new password.');
       } else if (mode === 'signup') {
-        const {data: registered, error: lookupError} = await isEmailRegistered(mail);
-        if (lookupError) {
-          setEmailError('We could not check this email right now. Please try again.');
-          return;
-        }
-        if (registered) {
-          setEmailError('An account with this email is already registered. Switch to Sign in to continue.');
-          return;
-        }
         const {error} = await requestEmailOnlyOtp(mail);
         if (error) {
           showSignupError(error);
@@ -149,7 +140,7 @@ export default function Login() {
           setOtpSent(true);
           setCooldown(60);
           setSentTo(mail);
-          setMessage('Check your inbox or spam folder for the 6-digit code.');
+          setMessage('If this address can use UniVents, a 6-digit code has been sent. Check your inbox or spam folder.');
         }
       } else {
         const err = await signIn(mail, password);

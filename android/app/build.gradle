@@ -3,6 +3,18 @@ apply plugin: "org.jetbrains.kotlin.android"
 apply plugin: "com.facebook.react"
 apply plugin: "com.google.gms.google-services"
 
+def releaseSigningProperties = new Properties()
+def releaseSigningPropertiesFile = rootProject.file("keystore.properties")
+if (releaseSigningPropertiesFile.isFile()) {
+    releaseSigningPropertiesFile.withInputStream { releaseSigningProperties.load(it) }
+}
+def releaseStorePath = releaseSigningProperties.getProperty("storeFile")?.trim()
+def releaseStoreFile = releaseStorePath ? rootProject.file(releaseStorePath) : null
+def releaseSigningReady = releaseStoreFile?.isFile() &&
+    ["storePassword", "keyAlias", "keyPassword"].every {
+        releaseSigningProperties.getProperty(it)?.trim()
+    }
+
 // Keep generated Android outputs outside OneDrive. It can mark merged resource
 // files as reparse points, which Gradle 9 cannot snapshot on Windows.
 if (System.getProperty("os.name").toLowerCase().contains("windows")) {
@@ -108,18 +120,41 @@ android {
             keyAlias 'androiddebugkey'
             keyPassword 'android'
         }
+        if (releaseSigningReady) {
+            release {
+                storeFile releaseStoreFile
+                storePassword releaseSigningProperties.getProperty("storePassword")
+                keyAlias releaseSigningProperties.getProperty("keyAlias")
+                keyPassword releaseSigningProperties.getProperty("keyPassword")
+            }
+        }
     }
     buildTypes {
         debug {
             signingConfig signingConfigs.debug
         }
         release {
-            // Caution! In production, you need to generate your own keystore file.
-            // see https://reactnative.dev/docs/signed-apk-android.
-            signingConfig signingConfigs.debug
+            // Never publish a release signed with the public Android debug key.
+            if (releaseSigningReady) {
+                signingConfig signingConfigs.release
+            }
             minifyEnabled enableProguardInReleaseBuilds
             proguardFiles getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro"
         }
+    }
+}
+
+tasks.register("validateReleaseSigning") {
+    doLast {
+        if (!releaseSigningReady) {
+            throw new GradleException("Release signing is not configured. Add a valid android/keystore.properties and upload keystore before building a release.")
+        }
+    }
+}
+
+tasks.configureEach { task ->
+    if (task.name == "preReleaseBuild") {
+        task.dependsOn("validateReleaseSigning")
     }
 }
 

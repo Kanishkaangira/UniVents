@@ -39,10 +39,10 @@ export default function ProfileSetup() {
   };
   const update = (key, value) => changeForm(prev => ({...prev, [key]: value}));
   const selectedFaculty = skillFaculties.find(item => item.id === form.skill_faculty_id);
-  const facultyDepartments = selectedFaculty
+  const facultyDepartments = useMemo(() => selectedFaculty
     ? [...new Map(departments.filter(item => item.skill_faculty_id === selectedFaculty.id)
       .map(item => [String(item.name || '').trim().toLowerCase(), item])).values()]
-    : [];
+    : [], [selectedFaculty, departments]);
   const departmentlessFacultySelected = Boolean(selectedFaculty && facultyDepartments.length === 0 && !form.department_id);
   const selectedDepartment = facultyDepartments.find(item => item.id === form.department_id)
     || (departmentlessFacultySelected ? selectedFaculty : null);
@@ -77,7 +77,7 @@ export default function ProfileSetup() {
       batchEnd: profile?.batch?.match(/^(\d{4})\s*[-–]\s*(\d{4})$/)?.[2] || '',
       semester: profile?.semester ? String(profile.semester) : '',
     });
-  }, [profile, profileStatus, suggestedUserType, departments, skillFaculties]);
+  }, [profile, profileStatus, suggestedUserType, departments, skillFaculties, roll]);
 
   const submit = async () => {
     const name = form.user_name.trim();

@@ -7,11 +7,12 @@ import Notice from '../Screens/Notice';
 import Profile from '../Screens/Profile';
 
 const Tab = createBottomTabNavigator();
+const renderTabBar = props => <FloatingTabBar {...props} />;
 
 export default function HomeBottomTabs() {
   return (
     <Tab.Navigator
-      tabBar={props => <FloatingTabBar {...props} />}
+      tabBar={renderTabBar}
       screenOptions={{headerShown: false}}>
       <Tab.Screen name="Home" component={Home} />
       <Tab.Screen name="Events" component={Events} />
