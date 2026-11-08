@@ -10,15 +10,20 @@ if (releaseSigningPropertiesFile.isFile()) {
 }
 def releaseStorePath = releaseSigningProperties.getProperty("storeFile")?.trim()
 def releaseStoreFile = releaseStorePath ? rootProject.file(releaseStorePath) : null
+def releaseStoreType = releaseSigningProperties.getProperty("storeType", "JKS").trim()
+def releaseStorePassword = releaseSigningProperties.getProperty("storePassword")?.trim()
+def releaseKeyAlias = releaseSigningProperties.getProperty("keyAlias")?.trim()
+def releaseKeyPassword = releaseSigningProperties.getProperty("keyPassword")?.trim()
 def releaseSigningReady = releaseStoreFile?.isFile() &&
-    ["storePassword", "keyAlias", "keyPassword"].every {
-        releaseSigningProperties.getProperty(it)?.trim()
-    }
+    releaseStorePassword &&
+    releaseKeyAlias &&
+    releaseKeyPassword &&
+    ["JKS", "PKCS12"].contains(releaseStoreType.toUpperCase(Locale.ROOT))
 
-// Keep generated Android outputs outside OneDrive. It can mark merged resource
-// files as reparse points, which Gradle 9 cannot snapshot on Windows.
+// Keep generated outputs outside the repository but on the same drive so
+// Gradle can snapshot React Native's release bundle on Windows.
 if (System.getProperty("os.name").toLowerCase().contains("windows")) {
-    def localBuildRoot = new File(System.getenv("LOCALAPPDATA") ?: System.getProperty("java.io.tmpdir"), "UniVents/android-build/app")
+    def localBuildRoot = new File(rootProject.projectDir.parentFile.parentFile, "UniVents-android-build/app")
     layout.buildDirectory.set(localBuildRoot)
 }
 
@@ -100,7 +105,7 @@ android {
     if (System.getProperty("os.name").toLowerCase().contains("windows")) {
         externalNativeBuild {
             cmake {
-                buildStagingDirectory new File(System.getenv("LOCALAPPDATA") ?: System.getProperty("java.io.tmpdir"), "UniVents/android-build/app-cxx")
+                buildStagingDirectory new File(rootProject.projectDir.parentFile.parentFile, "UniVents-android-build/app-cxx")
             }
         }
     }
@@ -123,9 +128,10 @@ android {
         if (releaseSigningReady) {
             release {
                 storeFile releaseStoreFile
-                storePassword releaseSigningProperties.getProperty("storePassword")
-                keyAlias releaseSigningProperties.getProperty("keyAlias")
-                keyPassword releaseSigningProperties.getProperty("keyPassword")
+                storeType releaseStoreType
+                storePassword releaseStorePassword
+                keyAlias releaseKeyAlias
+                keyPassword releaseKeyPassword
             }
         }
     }
@@ -146,8 +152,17 @@ android {
 
 tasks.register("validateReleaseSigning") {
     doLast {
-        if (!releaseSigningReady) {
-            throw new GradleException("Release signing is not configured. Add a valid android/keystore.properties and upload keystore before building a release.")
+        if (!releaseSigningPropertiesFile.isFile()) {
+            throw new GradleException("Release signing is not configured. Create android/keystore.properties using the local template in the release signing instructions.")
+        }
+        if (!releaseStoreFile?.isFile()) {
+            throw new GradleException("Release keystore not found. Check the storeFile path in android/keystore.properties.")
+        }
+        if (!releaseStorePassword || !releaseKeyAlias || !releaseKeyPassword) {
+            throw new GradleException("Release signing properties are incomplete. Set storePassword, keyAlias, and keyPassword in android/keystore.properties.")
+        }
+        if (!["JKS", "PKCS12"].contains(releaseStoreType.toUpperCase(Locale.ROOT))) {
+            throw new GradleException("Unsupported release keystore type '$releaseStoreType'. Use JKS or PKCS12.")
         }
     }
 }

@@ -77,6 +77,57 @@ When you want to forcefully reload, for example to reset the state of your app, 
 
 You've successfully run and modified your React Native App. :partying_face:
 
+## Android release signing
+
+The upload keystore and `android/keystore.properties` contain private signing
+credentials. Keep the keystore outside the repository, back it up securely,
+and never commit either file. The repository ignores the local properties file
+and common keystore formats.
+
+1. In PowerShell, create the key directory and generate a JKS upload keystore.
+   Choose a strong password when prompted; press Enter at the key-password
+   prompt to use the same password for both.
+
+   ```powershell
+   $keyDir = Join-Path $env:USERPROFILE 'Documents\UniVents-Keys'
+   New-Item -ItemType Directory -Force -Path $keyDir | Out-Null
+   $keyPath = Join-Path $keyDir 'univents-upload-key.jks'
+   keytool -genkeypair -v -keystore $keyPath -storetype JKS `
+     -alias univents-upload -keyalg RSA -keysize 4096 -validity 10000
+   ```
+
+2. Verify the key with
+   `keytool -list -v -keystore $keyPath -alias univents-upload`, then run
+   `$keyPath -replace '\\','/'` and copy its output. Copy
+   `android/keystore.properties.example` to
+   `android/keystore.properties`. Edit the copy: set `storeFile` to the
+   copied path and replace both password placeholders with the passwords
+   chosen above. A 32-character letters-and-numbers password avoids
+   properties-file escaping issues. Keep `storeType=JKS` and
+   `keyAlias=univents-upload`. Do not add spaces around the `=` signs.
+3. From the `android` directory, validate signing and build the Play Store
+   bundle:
+
+   ```powershell
+   .\gradlew.bat :app:validateReleaseSigning
+   .\gradlew.bat :app:bundleRelease
+   ```
+
+4. Optionally build a release APK for direct testing:
+
+   ```powershell
+   .\gradlew.bat :app:assembleRelease
+   ```
+
+   On Windows, this project writes release outputs to
+   `..\UniVents-android-build\app\outputs` (relative to the project root).
+   Upload `bundle\release\app-release.aab` to Play Console; use
+   `apk\release\app-release.apk` for direct device testing.
+
+Use the same upload keystore for future app updates and keep a secure backup.
+Increase `versionCode` in `android/app/build.gradle` for each Play Store
+release.
+
 ### Now what?
 
 - If you want to add this new React Native code to an existing application, check out the [Integration guide](https://reactnative.dev/docs/integration-with-existing-apps).
