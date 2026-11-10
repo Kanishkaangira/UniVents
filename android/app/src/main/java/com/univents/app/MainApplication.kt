@@ -1,4 +1,4 @@
-package com.univents
+package com.univents.app
 
 import android.app.Application
 import android.app.NotificationChannel

@@ -1,4 +1,4 @@
-package com.univents
+package com.univents.app
 
 import com.facebook.react.ReactActivity
 import com.facebook.react.ReactActivityDelegate

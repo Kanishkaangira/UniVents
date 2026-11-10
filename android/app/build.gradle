@@ -110,9 +110,9 @@ android {
         }
     }
 
-    namespace "com.univents"
+    namespace "com.univents.app"
     defaultConfig {
-        applicationId "com.univents"
+        applicationId "com.univents.app"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
         versionCode 1
